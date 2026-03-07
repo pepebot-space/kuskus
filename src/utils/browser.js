@@ -9,6 +9,7 @@ import { ensureChromium, findChromeBinary } from './chromium.js';
 const POLL_INTERVAL = 200;    // ms between CDP checks
 const POLL_TIMEOUT = 15_000;  // ms max wait for browser to start
 const SHUTDOWN_TIMEOUT = 5_000;
+const DEFAULT_PROFILE_DIR = path.join(os.homedir(), '.local', 'chrome-profile');
 
 /**
  * Check if a CDP endpoint is reachable.
@@ -58,6 +59,7 @@ export async function ensureBrowser({
   binaryPath = null,
   headless = true,
   force = false,
+  userDataDir = null,
   log = () => {},
 } = {}) {
   // Already running?
@@ -82,7 +84,19 @@ export async function ensureBrowser({
 
   log(`Launching Chromium on port ${port}...`);
 
-  const userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'kuskus-chrome-'));
+  const usePersistentProfile = Boolean(userDataDir) || !headless;
+  let profileDir;
+  let tempProfileDir = null;
+
+  if (usePersistentProfile) {
+    profileDir = userDataDir || DEFAULT_PROFILE_DIR;
+    await fsp.mkdir(profileDir, { recursive: true });
+    log(`Using Chrome profile at ${profileDir}`);
+  } else {
+    tempProfileDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'kuskus-chrome-'));
+    profileDir = tempProfileDir;
+  }
+
   const args = [
     '--disable-gpu',
     '--disable-software-rasterizer',
@@ -94,11 +108,14 @@ export async function ensureBrowser({
     '--remote-allow-origins=*',
     `--remote-debugging-port=${port}`,
     `--remote-debugging-address=${host}`,
-    `--user-data-dir=${userDataDir}`,
   ];
 
   if (headless) {
     args.unshift('--headless=new');
+  }
+
+  if (profileDir) {
+    args.push(`--user-data-dir=${profileDir}`);
   }
 
   args.push('about:blank');
@@ -118,7 +135,9 @@ export async function ensureBrowser({
   }
 
   proc.once('exit', async () => {
-    await fsp.rm(userDataDir, { recursive: true, force: true });
+    if (tempProfileDir) {
+      await fsp.rm(tempProfileDir, { recursive: true, force: true });
+    }
   });
 
   await waitForCDP(host, port);

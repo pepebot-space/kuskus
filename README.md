@@ -92,6 +92,7 @@ Options:
 --launch             Auto-launch Chrome/Chromium before running
 --no-headless        Launch Chrome/Chromium with a visible window
 --force-launch       Shut down an existing debugging browser before launching
+--user-data-dir <p>  Reuse a Chrome profile directory (default ~/.local/chrome-profile when visible)
 --output <format>    Output format: text or json (default: text)
 --debug              Log raw CDP messages
 ```

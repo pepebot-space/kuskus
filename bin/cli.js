@@ -32,6 +32,7 @@ program
   .option('--launch-path <path>', 'Path to Chrome/Chromium binary')
   .option('--no-headless', 'Launch Chrome/Chromium with a visible window')
   .option('--force-launch', 'Shut down an existing debugging browser before launching')
+  .option('--user-data-dir <path>', 'Chrome user data directory to reuse between runs')
   .option('--debug', 'Enable debug logging')
   .option('--output <format>', 'Output format: text or json', 'text')
   .action(async (task, opts) => {
@@ -47,6 +48,7 @@ program
         binaryPath: opts.launchPath,
         headless: opts.headless,
         force: forceLaunch,
+        userDataDir: opts.userDataDir,
       });
     }
 
@@ -106,6 +108,7 @@ program
   .option('--launch-path <path>', 'Path to Chrome/Chromium binary')
   .option('--no-headless', 'Launch Chrome/Chromium with a visible window')
   .option('--force-launch', 'Shut down an existing debugging browser before launching')
+  .option('--user-data-dir <path>', 'Chrome user data directory to reuse between runs')
   .action(async (opts) => {
     let browser;
     if (opts.launch) {
@@ -117,6 +120,7 @@ program
         binaryPath: opts.launchPath,
         headless: opts.headless,
         force: forceLaunch,
+        userDataDir: opts.userDataDir,
       });
     }
 

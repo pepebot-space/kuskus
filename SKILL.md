@@ -24,6 +24,7 @@ npx @porcupine/kuskus repl --model claude-sonnet-4-6 --launch
 Key flags:
 - `--launch` / `--no-headless` – start Chrome automatically, optionally with a window.
 - `--force-launch` – shut down any existing debugging browser before launching.
+- `--user-data-dir` – point to a Chrome profile so sessions persist across runs.
 - `--output json` – return structured data when tools emit payloads.
 
 ## MCP Integration
