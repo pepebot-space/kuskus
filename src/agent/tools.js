@@ -27,12 +27,10 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_page_content',
-    description: 'Get the readable text content of the current page (HTML converted to text/markdown).',
+    description: 'Get the full content of the current page: readable text AND raw HTML. Use this to read and reason about page content before deciding the next action.',
     input_schema: {
       type: 'object',
-      properties: {
-        format: { type: 'string', enum: ['text', 'html'], description: 'Output format.' },
-      },
+      properties: {},
     },
   },
   {
@@ -134,19 +132,6 @@ export const TOOL_DEFINITIONS = [
         url_regex: {
           type: 'string',
           description: 'Optional JavaScript regular expression that the new URL must match.',
-        },
-      },
-    },
-  },
-  {
-    name: 'extract_serp_results',
-    description: 'Extract top search results (title, URL, snippet) from the current Google results page.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        limit: {
-          type: 'number',
-          description: 'Maximum number of results to return (default 5, max 10).',
         },
       },
     },

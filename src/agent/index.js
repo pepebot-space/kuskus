@@ -1,10 +1,8 @@
 import { SessionManager } from '../cdp/session.js';
 import { createPageDomain } from '../cdp/domains/page.js';
-import { createRuntimeDomain } from '../cdp/domains/runtime.js';
 import { Planner } from './planner.js';
 import { Executor } from './executor.js';
 import { AgentMemory } from './memory.js';
-import { htmlToReadableText } from '../utils/dom-to-text.js';
 import { saveScreenshot, screenshotFilename } from '../utils/screenshot.js';
 import logger from '../utils/logger.js';
 
@@ -75,15 +73,12 @@ export class KuskusAgent {
       // Observe current state
       const client = await this.#session.getActiveSession();
       const page = createPageDomain(client, this.#session.capabilities);
-      const runtime = createRuntimeDomain(client);
 
-      const [currentUrl, screenshot, html] = await Promise.all([
+      const [currentUrl, screenshot, pageContent] = await Promise.all([
         page.getURL().catch(() => 'unknown'),
         page.screenshot({ quality: Number(process.env.AGENT_SCREENSHOT_QUALITY) || 80 }).catch(() => null),
-        runtime.evaluate('document.documentElement.outerHTML').catch(() => ''),
+        this.#executor.execute('get_page_content', {}).catch(() => ''),
       ]);
-
-      const pageContent = htmlToReadableText(html);
 
       // Save screenshot to disk if configured
       if (screenshot && this.#screenshotDir) {

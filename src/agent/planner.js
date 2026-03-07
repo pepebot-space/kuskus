@@ -82,8 +82,8 @@ export class Planner {
       '## Previous Actions',
       history,
       '',
-      '## Current Page Content',
-      pageContent.slice(0, 6000),
+      '## Current Page Content (read this to reason about next action)',
+      pageContent.slice(0, 12000),
     ].join('\n');
 
     userContent.push({ type: 'text', text: contextText });

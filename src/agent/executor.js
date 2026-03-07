@@ -43,8 +43,8 @@ export class Executor {
       case 'get_page_content': {
         const { htmlToReadableText } = await import('../utils/dom-to-text.js');
         const html = await runtime.evaluate('document.documentElement.outerHTML');
-        if (params.format === 'html') return html;
-        return htmlToReadableText(html);
+        const text = htmlToReadableText(html);
+        return `=== READABLE TEXT ===\n${text}\n\n=== RAW HTML ===\n${html}`;
       }
 
       case 'get_url': {
@@ -137,56 +137,6 @@ export class Executor {
         }
 
         throw new Error(`Navigation did not complete within ${timeout}ms`);
-      }
-
-      case 'extract_serp_results': {
-        const limit = Math.max(1, Math.min(Number.isFinite(params.limit) ? Number(params.limit) : 5, 10));
-        const raw = await runtime.evaluate(`(() => {
-          const max = ${limit};
-          const seen = new Set();
-          const results = [];
-          const addResult = (titleEl, linkEl, snippetEl) => {
-            if (!titleEl || !linkEl) return;
-            const url = linkEl.href || '';
-            const title = titleEl.innerText?.trim();
-            if (!url || !title || seen.has(url)) return;
-            seen.add(url);
-            const snippet = snippetEl?.innerText?.trim?.() || '';
-            results.push({ title, url, snippet });
-          };
-          const snippetSelector = 'div.VwiC3b, span.aCOpRe, div[data-sncf]';
-          const containerSelector = '#search div.g, #search div[data-sokoban-container="true"], #search div[jscontroller="SC7lYd"]';
-          const sections = Array.from(document.querySelectorAll(containerSelector));
-          for (const section of sections) {
-            const link = section.querySelector('a');
-            const title = section.querySelector('h3');
-            if (!link || !title) continue;
-            const snippet = section.querySelector(snippetSelector);
-            addResult(title, link, snippet);
-            if (results.length >= max) break;
-          }
-          if (results.length < max) {
-            const extra = Array.from(document.querySelectorAll('#search a h3'));
-            for (const title of extra) {
-              const link = title.closest('a');
-              const container = title.closest(containerSelector) || title.parentElement?.parentElement;
-              const snippet = container?.querySelector(snippetSelector);
-              addResult(title, link, snippet);
-              if (results.length >= max) break;
-            }
-          }
-          return JSON.stringify(results);
-        })()`);
-        let parsed;
-        try {
-          parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        } catch {
-          parsed = [];
-        }
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-          throw new Error('No search results could be extracted');
-        }
-        return JSON.stringify(parsed.slice(0, limit), null, 2);
       }
 
       case 'wait': {
