@@ -9,13 +9,13 @@ import { SessionManager } from '../src/cdp/session.js';
 import { createPageDomain } from '../src/cdp/domains/page.js';
 import { saveScreenshot, screenshotFilename } from '../src/utils/screenshot.js';
 import { ensureBrowser } from '../src/utils/browser.js';
-import { ensureLightpanda } from '../src/utils/install.js';
+import { ensureChromium } from '../src/utils/chromium.js';
 
 const VERSION = '0.1.0';
 
 program
   .name('kuskus')
-  .description('AI browser agent using CDP + Lightpanda')
+  .description('AI browser agent using CDP + Chromium/Chrome')
   .version(VERSION);
 
 // ── run command ──────────────────────────────────────────────────────────────
@@ -28,8 +28,10 @@ program
   .option('--max-steps <n>', 'Max agent steps', String(process.env.AGENT_MAX_STEPS || 20))
   .option('--screenshots <dir>', 'Directory to save step screenshots')
   .option('--no-screenshot', 'Disable screenshot capture in agent loop')
-  .option('--launch', 'Auto-launch Lightpanda browser before running')
-  .option('--launch-path <path>', 'Path to Lightpanda binary', 'lightpanda')
+  .option('--launch', 'Auto-launch Chrome/Chromium before running')
+  .option('--launch-path <path>', 'Path to Chrome/Chromium binary')
+  .option('--no-headless', 'Launch Chrome/Chromium with a visible window')
+  .option('--force-launch', 'Shut down an existing debugging browser before launching')
   .option('--debug', 'Enable debug logging')
   .option('--output <format>', 'Output format: text or json', 'text')
   .action(async (task, opts) => {
@@ -38,7 +40,14 @@ program
     let browser;
     if (opts.launch) {
       const port = Number(new URL(opts.cdpUrl).port) || 9222;
-      browser = await ensureBrowser({ port, log: (m) => console.log(chalk.gray(m)) });
+      const forceLaunch = opts.forceLaunch || opts.headless === false;
+      browser = await ensureBrowser({
+        port,
+        log: (m) => console.log(chalk.gray(m)),
+        binaryPath: opts.launchPath,
+        headless: opts.headless,
+        force: forceLaunch,
+      });
     }
 
     const spinner = ora(chalk.cyan(`Running task: ${task}`)).start();
@@ -93,13 +102,22 @@ program
   .option('--model <model>', 'Model name', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
   .option('--max-steps <n>', 'Max steps per task', String(process.env.AGENT_MAX_STEPS || 20))
   .option('--screenshots <dir>', 'Directory to save screenshots')
-  .option('--launch', 'Auto-launch Lightpanda')
-  .option('--launch-path <path>', 'Path to Lightpanda binary', 'lightpanda')
+  .option('--launch', 'Auto-launch Chrome/Chromium')
+  .option('--launch-path <path>', 'Path to Chrome/Chromium binary')
+  .option('--no-headless', 'Launch Chrome/Chromium with a visible window')
+  .option('--force-launch', 'Shut down an existing debugging browser before launching')
   .action(async (opts) => {
     let browser;
     if (opts.launch) {
       const port = Number(new URL(opts.cdpUrl).port) || 9222;
-      browser = await ensureBrowser({ port, log: (m) => console.log(chalk.gray(m)) });
+      const forceLaunch = opts.forceLaunch || opts.headless === false;
+      browser = await ensureBrowser({
+        port,
+        log: (m) => console.log(chalk.gray(m)),
+        binaryPath: opts.launchPath,
+        headless: opts.headless,
+        force: forceLaunch,
+      });
     }
 
     console.log(chalk.bold.cyan('\nKuskus Browser Agent REPL'));
@@ -272,10 +290,10 @@ program
 // ── mcp command ───────────────────────────────────────────────────────────────
 program
   .command('mcp')
-  .description('Start the Kuskus MCP server (auto-downloads and launches Lightpanda)')
+  .description('Start the Kuskus MCP server (auto-downloads and launches Chromium)')
   .option('--cdp-url <url>', 'CDP WebSocket URL', process.env.CDP_URL || 'ws://localhost:9222')
-  .option('--no-install', 'Skip auto-download of Lightpanda')
-  .option('--no-launch', 'Skip auto-launch of Lightpanda (assume already running)')
+  .option('--no-install', 'Skip auto-download of Chromium')
+  .option('--no-launch', 'Skip auto-launch of Chromium (assume already running)')
   .action(async (opts) => {
     const port = Number(new URL(opts.cdpUrl).port) || 9222;
     const host = new URL(opts.cdpUrl).hostname;
@@ -300,16 +318,16 @@ program
 // ── install command ───────────────────────────────────────────────────────────
 program
   .command('install')
-  .description('Download and install Lightpanda browser to ~/.local/bin/lightpanda')
+  .description('Download and install Chromium to ~/.local')
   .option('--force', 'Re-download even if already installed')
   .action(async (opts) => {
-    const spinner = ora('Installing Lightpanda...').start();
+    const spinner = ora('Installing Chromium...').start();
     try {
-      const p = await ensureLightpanda({
+      const p = await ensureChromium({
         force: opts.force,
         log: (msg) => { spinner.text = msg; },
       });
-      spinner.succeed(chalk.green(`Lightpanda installed: ${p}`));
+      spinner.succeed(chalk.green(`Chromium installed: ${p}`));
     } catch (err) {
       spinner.fail(chalk.red(`Install failed: ${err.message}`));
       process.exit(1);

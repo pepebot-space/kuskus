@@ -1,7 +1,7 @@
 {
   "name": "@porcupine/kuskus",
-  "version": "0.1.0",
-  "description": "AI browser agent using Chrome DevTools Protocol with Lightpanda",
+  "version": "0.1.1",
+  "description": "AI browser agent using the Chrome DevTools Protocol",
   "type": "module",
   "bin": {
     "kuskus": "./bin/cli.js"
@@ -22,6 +22,7 @@
     "commander": "^12.0.0",
     "dotenv": "^16.0.0",
     "html-to-text": "^9.0.0",
+    "extract-zip": "^2.0.1",
     "openai": "^6.27.0",
     "ora": "^8.0.0",
     "pino": "^9.0.0",

@@ -11,13 +11,13 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@porcupine/kuskus"><img src="https://img.shields.io/npm/v/@porcupine/kuskus?color=a78bfa&label=npm" alt="npm" /></a>
   <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="node" />
-  <img src="https://img.shields.io/badge/browser-Lightpanda-orange" alt="Lightpanda" />
+  <img src="https://img.shields.io/badge/browser-Chromium-blue" alt="Chromium" />
   <img src="https://img.shields.io/badge/protocol-CDP-blue" alt="CDP" />
 </p>
 
 ---
 
-Kuskus controls a browser directly over the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) using [Lightpanda](https://github.com/lightpanda-io/browser) — a lightweight headless browser with native CDP support.
+Kuskus controls a browser directly over the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) by auto-detecting an installed Chrome/Chromium build (or downloading one on demand).
 
 Ships as two artifacts:
 
@@ -32,7 +32,7 @@ Ships as two artifacts:
 ## Requirements
 
 - Node.js >= 20
-- The Lightpanda binary is downloaded automatically on first run
+- Chrome or Chromium (auto-detected; falls back to downloading a Chromium build into `~/.local`)
 
 ---
 
@@ -89,7 +89,9 @@ Options:
 --model <model>      Model name (default: claude-sonnet-4-6)
 --max-steps <n>      Max agent steps (default: 20)
 --screenshots <dir>  Save step screenshots to directory
---launch             Auto-launch Lightpanda before running
+--launch             Auto-launch Chrome/Chromium before running
+--no-headless        Launch Chrome/Chromium with a visible window
+--force-launch       Shut down an existing debugging browser before launching
 --output <format>    Output format: text or json (default: text)
 --debug              Log raw CDP messages
 ```
@@ -125,7 +127,7 @@ kuskus script ./tasks.json --output json
 ]
 ```
 
-#### `install` — manually install Lightpanda
+#### `install` — manually install Chromium
 
 ```bash
 kuskus install
@@ -139,7 +141,7 @@ kuskus install --force
 kuskus mcp
 ```
 
-> Lightpanda is downloaded and launched automatically. No API key required.
+> Chromium is downloaded and launched automatically. No API key required.
 
 ---
 
@@ -274,7 +276,7 @@ Entry Points
                   (single WebSocket,
                    session multiplexing)
                          │
-              Lightpanda Browser
+              Chromium Browser
               ws://localhost:9222
 ```
 
@@ -284,7 +286,7 @@ Entry Points
 ┌─────────────────────────────────────────────┐
 │  1. Observe   get_page_content + screenshot  │
 │  2. Plan      Claude picks next tool         │
-│  3. Execute   CDP command via Lightpanda     │
+│  3. Execute   CDP command via Chromium       │
 │  4. Remember  append step to rolling history │
 │  5. Repeat    until finish or max steps      │
 └─────────────────────────────────────────────┘
@@ -312,7 +314,7 @@ AGENT_SCREENSHOT_QUALITY=80
 
 # Browser (CLI + MCP)
 CDP_URL=ws://localhost:9222
-CDP_BROWSER_PATH=lightpanda        # custom binary path
+# CDP_BROWSER_PATH=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
 CDP_BROWSER_PORT=9222
 
 # Logging
@@ -322,18 +324,20 @@ LOG_FORMAT=pretty                  # pretty | logfmt
 
 ---
 
-## Lightpanda
+## Browser Runtime
 
-Kuskus uses [Lightpanda](https://github.com/lightpanda-io/browser) — a fast, lightweight headless browser written in Zig with native CDP support.
+Kuskus looks for Chrome/Chromium automatically. It checks common install locations (`/Applications/Google Chrome.app`, `chromium`, etc.) and honours `CDP_BROWSER_PATH`, `CHROME_PATH`, and `GOOGLE_CHROME_BIN` if set.
 
-The binary is downloaded automatically from GitHub releases to `~/.local/bin/lightpanda` on first run. Supported platforms:
+When no suitable binary is found (and auto-install is allowed) Kuskus downloads the latest **Chromium for Testing** build to `~/.local/chrome/<version>` and symlinks it to `~/.local/bin/chromium`.
+
+Supported platforms for auto-download:
 
 | OS | Arch |
 |----|------|
-| Linux | x86_64, aarch64 |
-| macOS | x86_64 (Intel), aarch64 (Apple Silicon) |
+| Linux | x86_64, arm64 |
+| macOS | x86_64 (Intel), arm64 (Apple Silicon) |
 
-> **Note:** Lightpanda is actively developed. Some CDP features (e.g. `Page.captureScreenshot`) are not yet implemented. Kuskus detects this automatically and skips unsupported calls without crashing.
+Use `CDP_BROWSER_PATH` to point at a custom binary if you prefer a specific channel (e.g. Chrome Canary) or an alternative CDP-compatible browser.
 
 ---
 
@@ -377,7 +381,7 @@ cp .env.example .env
 npm test
 
 # Try the CLI
-node bin/cli.js install         # download Lightpanda
+node bin/cli.js install         # download Chromium for Testing
 node bin/cli.js run "..." --launch
 ```
 
@@ -410,7 +414,7 @@ kuskus/
 │   │   ├── server.js       MCP server (stdio transport)
 │   │   └── handlers.js     Tool + resource handlers
 │   └── utils/
-│       ├── install.js      Lightpanda auto-downloader
+│       ├── chromium.js     Chrome/Chromium detector + downloader
 │       ├── browser.js      Launch + CDP readiness check
 │       ├── dom-to-text.js  HTML → readable text for LLM
 │       ├── screenshot.js   Save screenshots to disk
