@@ -15,11 +15,11 @@ Kuskus is a CLI and MCP server that lets an AI agent control a real Chrome/Chrom
 export OPENAI_API_KEY=sk-...
 
 # one-shot task (visible browser)
-npx @porcupine/kuskus run "Visit https://example.com and report the heading" --model gpt-4o --launch
+npx -y @porcupine/kuskus@latest run "Visit https://example.com and report the heading" --model gpt-4o --launch
 
 # interactive REPL with Claude
 export ANTHROPIC_API_KEY=sk-ant-...
-npx @porcupine/kuskus repl --model claude-sonnet-4-6 --launch
+npx -y @porcupine/kuskus@latest repl --model claude-sonnet-4-6 --launch
 ```
 
 Key flags:
@@ -32,17 +32,17 @@ Key flags:
 Start the MCP server and let the host model drive planning:
 
 ```bash
-npx @porcupine/kuskus mcp --launch --no-headless
+npx -y @porcupine/kuskus@latest mcp --launch --no-headless
 ```
 
 Configure your MCP-compatible client to use the `kuskus` command. Available tools include page navigation, content extraction, screenshot capture, and tab management.
 
 ## Version
-- Current release: `0.1.7`
+- Current release: `0.1.8`
 - Check locally with:
 
   ```bash
-  npx @porcupine/kuskus --version
+  npx -y @porcupine/kuskus@latest --version
   ```
 
 ## Deployment Notes
