@@ -38,7 +38,7 @@ npx @porcupine/kuskus mcp --launch --no-headless
 Configure your MCP-compatible client to use the `kuskus` command. Available tools include page navigation, content extraction, screenshot capture, and tab management.
 
 ## Version
-- Current release: `0.1.4`
+- Current release: `0.1.6`
 - Check locally with:
 
   ```bash

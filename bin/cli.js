@@ -4,6 +4,7 @@ import { program } from 'commander';
 import chalk from 'chalk';
 import ora from 'ora';
 import readline from 'readline';
+import { readFileSync } from 'fs';
 import { KuskusAgent } from '../src/agent/index.js';
 import { SessionManager } from '../src/cdp/session.js';
 import { createPageDomain } from '../src/cdp/domains/page.js';
@@ -11,7 +12,8 @@ import { saveScreenshot, screenshotFilename } from '../src/utils/screenshot.js';
 import { ensureBrowser } from '../src/utils/browser.js';
 import { ensureChromium } from '../src/utils/chromium.js';
 
-const VERSION = '0.1.1';
+const pkgJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
+const VERSION = pkgJson.version;
 
 program
   .name('kuskus')
