@@ -120,7 +120,7 @@ export class Executor {
       }
 
       case 'wait_for_navigation': {
-        const timeout = Math.min(params.timeout_ms ?? 10_000, 60_000);
+        const timeout = Math.min(params.timeout_ms ?? 10_000, 300_000);
         const regex = params.url_regex ? new RegExp(params.url_regex) : null;
         const startUrl = await page.getURL().catch(() => '');
         const deadline = Date.now() + timeout;

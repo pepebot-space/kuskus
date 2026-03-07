@@ -1,5 +1,5 @@
 import { createProvider, detectProvider } from './providers.js';
-import { SYSTEM_PROMPT, TASK_CONTEXT_TEMPLATE } from './prompts.js';
+import { SYSTEM_PROMPT, TASK_CONTEXT_TEMPLATE, PLANNING_SYSTEM_PROMPT, PLANNING_USER_TEMPLATE } from './prompts.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -36,6 +36,25 @@ export class Planner {
   get providerName() { return this.#provider.provider; }
 
   /**
+   * Generate a structured execution plan from a user task before the agent loop starts.
+   *
+   * @param {string} task
+   * @returns {Promise<string>} plain-text plan
+   */
+  async plan(task) {
+    logger.debug({ provider: this.#provider.provider }, 'Generating task plan');
+    try {
+      return await this.#provider.textCall({
+        systemPrompt: PLANNING_SYSTEM_PROMPT,
+        userText: PLANNING_USER_TEMPLATE(task),
+      });
+    } catch (err) {
+      logger.warn({ err: err.message }, 'Planning step failed, continuing without plan');
+      return null;
+    }
+  }
+
+  /**
    * Ask the LLM for the next tool call given the current browser state.
    *
    * @param {object} opts
@@ -46,9 +65,10 @@ export class Planner {
    * @param {string|null} opts.screenshot   base64 PNG or null
    * @param {string}      opts.pageContent
    * @param {string}      opts.currentUrl
+   * @param {string|null} opts.plan
    * @returns {Promise<{ toolName: string, params: object }>}
    */
-  async nextAction({ task, step, maxSteps, history, screenshot, pageContent, currentUrl }) {
+  async nextAction({ task, step, maxSteps, history, screenshot, pageContent, currentUrl, plan }) {
     const userContent = [];
 
     if (this.#includeScreenshot && screenshot) {
@@ -56,7 +76,7 @@ export class Planner {
     }
 
     const contextText = [
-      TASK_CONTEXT_TEMPLATE(task, step, maxSteps),
+      TASK_CONTEXT_TEMPLATE(task, step, maxSteps, plan),
       `Current URL: ${currentUrl}`,
       '',
       '## Previous Actions',

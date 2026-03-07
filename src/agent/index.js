@@ -58,6 +58,13 @@ export class KuskusAgent {
   async run(task) {
     this.#memory.clear();
     let step = 0;
+    const recentTools = []; // last N {toolName, key} for loop detection
+
+    const plan = await this.#planner.plan(task);
+    if (plan) {
+      logger.debug({ plan }, 'Task plan generated');
+      this.#onStep?.({ step: 0, tool: 'plan', params: { plan }, url: null });
+    }
 
     for (;;) {
       step++;
@@ -93,6 +100,7 @@ export class KuskusAgent {
         screenshot,
         pageContent,
         currentUrl,
+        plan,
       });
 
       this.#onStep?.({ step, tool: toolName, params, url: currentUrl });
@@ -101,6 +109,19 @@ export class KuskusAgent {
       if (toolName === 'finish') {
         this.#memory.push({ step, tool: 'finish', params, result: params.result });
         return { result: params.result, data: params.data, steps: step };
+      }
+
+      // Loop detection — same tool+params called 3 times in a row → force finish
+      const toolKey = `${toolName}:${JSON.stringify(params)}`;
+      recentTools.push(toolKey);
+      if (recentTools.length > 6) recentTools.shift();
+      const repeatCount = recentTools.filter((k) => k === toolKey).length;
+      if (repeatCount >= 3) {
+        logger.warn({ step, toolName, toolKey }, 'Loop detected: same tool called 3 times, stopping');
+        return {
+          result: `Stopped: detected repeated action "${toolName}" with same parameters ${repeatCount} times. Task may be incomplete.`,
+          steps: step,
+        };
       }
 
       // Execute tool

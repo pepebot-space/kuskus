@@ -53,6 +53,16 @@ function buildAnthropicProvider({ apiKey, model, maxTokens, systemPrompt }) {
       return { toolName: toolUse.name, params: toolUse.input };
     },
 
+    async textCall({ systemPrompt: sys, userText }) {
+      const response = await client.messages.create({
+        model,
+        max_tokens: 1024,
+        system: sys,
+        messages: [{ role: 'user', content: userText }],
+      });
+      return response.content.find((b) => b.type === 'text')?.text?.trim() || '';
+    },
+
     buildImageBlock(base64) {
       return { type: 'image', source: { type: 'base64', media_type: 'image/png', data: base64 } };
     },
@@ -89,6 +99,18 @@ function buildOpenAIProvider({ apiKey, model, maxTokens, systemPrompt }) {
       catch { params = {}; }
 
       return { toolName: toolCall.function.name, params };
+    },
+
+    async textCall({ systemPrompt: sys, userText }) {
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: 1024,
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: userText },
+        ],
+      });
+      return response.choices[0].message.content?.trim() || '';
     },
 
     buildImageBlock(base64) {
