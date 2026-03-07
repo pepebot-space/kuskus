@@ -11,7 +11,7 @@ import { saveScreenshot, screenshotFilename } from '../src/utils/screenshot.js';
 import { ensureBrowser } from '../src/utils/browser.js';
 import { ensureChromium } from '../src/utils/chromium.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.1.1';
 
 program
   .name('kuskus')

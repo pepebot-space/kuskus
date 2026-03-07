@@ -122,6 +122,23 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'wait_for_navigation',
+    description: 'Wait until the page navigates to a different URL (optionally matching a pattern).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        timeout_ms: {
+          type: 'number',
+          description: 'Maximum time to wait in milliseconds (default 10000, max 60000).',
+        },
+        url_regex: {
+          type: 'string',
+          description: 'Optional JavaScript regular expression that the new URL must match.',
+        },
+      },
+    },
+  },
+  {
     name: 'wait',
     description: 'Wait for a specified number of milliseconds.',
     input_schema: {

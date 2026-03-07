@@ -14,7 +14,7 @@ Kuskus is a CLI and MCP server that lets an AI agent control a real Chrome/Chrom
 export OPENAI_API_KEY=sk-...
 
 # one-shot task (visible browser)
-npx @porcupine/kuskus run "Visit https://example.com and report the heading" --model gpt-4o --launch --no-headless
+npx @porcupine/kuskus run "Visit https://example.com and report the heading" --model gpt-4o --launch
 
 # interactive REPL with Claude
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -44,3 +44,4 @@ Configure your MCP-compatible client to use the `kuskus` command. Available tool
 - Use `--debug` to stream CDP traffic and planner logs.
 - If a previous headless session is blocking `--no-headless`, add `--force-launch` to close it before relaunch.
 - Screenshots can be saved automatically with `--screenshots <dir>`.
+- The agent can invoke `wait_for_navigation` to wait for redirects (e.g., after SSO login) without manual prompts.

@@ -108,6 +108,26 @@ export class Executor {
         return typeof result === 'object' ? JSON.stringify(result) : String(result ?? 'undefined');
       }
 
+      case 'wait_for_navigation': {
+        const timeout = Math.min(params.timeout_ms ?? 10_000, 60_000);
+        const regex = params.url_regex ? new RegExp(params.url_regex) : null;
+        const startUrl = await page.getURL().catch(() => '');
+        const deadline = Date.now() + timeout;
+        let currentUrl = startUrl;
+
+        while (Date.now() < deadline) {
+          await sleep(300);
+          currentUrl = await page.getURL().catch(() => currentUrl);
+          const urlChanged = currentUrl && currentUrl !== startUrl;
+          const matches = regex ? regex.test(currentUrl) : true;
+          if (urlChanged && matches) {
+            return `Navigation detected: ${currentUrl}`;
+          }
+        }
+
+        throw new Error(`Navigation did not complete within ${timeout}ms`);
+      }
+
       case 'wait': {
         const ms = Math.min(params.ms ?? 1000, 10_000);
         await sleep(ms);
