@@ -23,7 +23,8 @@ program
   .command('run <task>')
   .description('Run a one-shot natural language task')
   .option('--cdp-url <url>', 'CDP WebSocket URL', process.env.CDP_URL || 'ws://localhost:9222')
-  .option('--model <model>', 'Claude model', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
+  .option('--provider <name>', 'LLM provider: anthropic or openai (auto-detected from model name if not set)')
+  .option('--model <model>', 'Model name (default: claude-sonnet-4-6)', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
   .option('--max-steps <n>', 'Max agent steps', String(process.env.AGENT_MAX_STEPS || 20))
   .option('--screenshots <dir>', 'Directory to save step screenshots')
   .option('--no-screenshot', 'Disable screenshot capture in agent loop')
@@ -45,6 +46,7 @@ program
 
     const agent = new KuskusAgent({
       cdpUrl: opts.cdpUrl,
+      provider: opts.provider || null,
       model: opts.model,
       maxSteps: Number(opts.maxSteps),
       screenshotDir: opts.screenshots,
@@ -87,7 +89,8 @@ program
   .command('repl')
   .description('Start an interactive REPL session')
   .option('--cdp-url <url>', 'CDP WebSocket URL', process.env.CDP_URL || 'ws://localhost:9222')
-  .option('--model <model>', 'Claude model', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
+  .option('--provider <name>', 'LLM provider: anthropic or openai (auto-detected if not set)')
+  .option('--model <model>', 'Model name', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
   .option('--max-steps <n>', 'Max steps per task', String(process.env.AGENT_MAX_STEPS || 20))
   .option('--screenshots <dir>', 'Directory to save screenshots')
   .option('--launch', 'Auto-launch Lightpanda')
@@ -105,6 +108,7 @@ program
 
     const agent = new KuskusAgent({
       cdpUrl: opts.cdpUrl,
+      provider: opts.provider || null,
       model: opts.model,
       maxSteps: Number(opts.maxSteps),
       screenshotDir: opts.screenshots,
@@ -207,7 +211,8 @@ program
   .command('script <file>')
   .description('Run tasks from a JSON script file')
   .option('--cdp-url <url>', 'CDP WebSocket URL', process.env.CDP_URL || 'ws://localhost:9222')
-  .option('--model <model>', 'Claude model', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
+  .option('--provider <name>', 'LLM provider: anthropic or openai (auto-detected if not set)')
+  .option('--model <model>', 'Model name', process.env.AGENT_MODEL || 'claude-sonnet-4-6')
   .option('--max-steps <n>', 'Max steps per task', String(process.env.AGENT_MAX_STEPS || 20))
   .option('--screenshots <dir>', 'Directory to save screenshots')
   .option('--output <format>', 'Output format: text or json', 'text')
@@ -224,6 +229,7 @@ program
 
     const agent = new KuskusAgent({
       cdpUrl: opts.cdpUrl,
+      provider: opts.provider || null,
       model: opts.model,
       maxSteps: Number(opts.maxSteps),
       screenshotDir: opts.screenshots,

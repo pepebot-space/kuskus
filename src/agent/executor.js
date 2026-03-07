@@ -23,7 +23,7 @@ export class Executor {
     logger.debug({ tool: toolName, params }, 'Executing tool');
 
     const client = await this.#client();
-    const page = createPageDomain(client);
+    const page = createPageDomain(client, this.#session.capabilities);
     const dom = createDOMDomain(client);
     const input = createInputDomain(client);
     const runtime = createRuntimeDomain(client);
@@ -65,19 +65,21 @@ export class Executor {
       }
 
       case 'type_text': {
-        const nodeId = await this.#resolveSelector(dom, params.selector);
-        await dom.scrollIntoView(nodeId);
-        const { x, y } = await dom.getCenter(nodeId);
-        await input.click(x, y);
-        if (params.clear_first !== false) {
-          // Select all + delete
-          await input.keyPress('Home');
-          await runtime.evaluate(
-            `document.querySelector(${JSON.stringify(params.selector)}).select()`
-          );
-          await input.keyPress('Backspace');
-        }
-        await input.type(params.text);
+        const sel = JSON.stringify(params.selector);
+        const text = JSON.stringify(params.text);
+        const clear = params.clear_first !== false;
+        // Use JS to set value + fire events — more reliable than simulated keystrokes
+        const result = await runtime.evaluate(`(function(){
+          const el = document.querySelector(${sel});
+          if (!el) return 'NOT_FOUND';
+          el.focus();
+          ${clear ? 'el.value = "";' : ''}
+          el.value = ${text};
+          el.dispatchEvent(new Event('input',  { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return el.value;
+        })()`);
+        if (result === 'NOT_FOUND') throw new Error(`Element not found: ${params.selector}`);
         return `Typed "${params.text}" into "${params.selector}"`;
       }
 

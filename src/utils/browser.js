@@ -65,7 +65,7 @@ export async function ensureBrowser({
 
   log(`Launching Lightpanda on port ${port}...`);
 
-  const proc = spawn(binaryPath, [`--remote-debugging-port=${port}`], {
+  const proc = spawn(binaryPath, ['serve', '--host', host, '--port', String(port), '--timeout', '3600'], {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });

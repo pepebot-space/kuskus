@@ -22,7 +22,9 @@ export class KuskusAgent {
 
   constructor({
     cdpUrl = process.env.CDP_URL || 'ws://localhost:9222',
+    provider = process.env.AGENT_PROVIDER || null,
     model = process.env.AGENT_MODEL || 'claude-sonnet-4-6',
+    apiKey = null,
     maxSteps = Number(process.env.AGENT_MAX_STEPS) || 20,
     maxTokens = Number(process.env.AGENT_MAX_TOKENS) || 4096,
     includeScreenshot = process.env.AGENT_INCLUDE_SCREENSHOT !== 'false',
@@ -31,7 +33,7 @@ export class KuskusAgent {
   } = {}) {
     const url = new URL(cdpUrl);
     this.#session = new SessionManager({ host: url.hostname, port: Number(url.port) || 9222 });
-    this.#planner = new Planner({ model, maxTokens, includeScreenshot });
+    this.#planner = new Planner({ provider, model, apiKey, maxTokens, includeScreenshot });
     this.#executor = new Executor(this.#session);
     this.#memory = new AgentMemory({ windowSize: 10 });
     this.#maxSteps = maxSteps;
@@ -65,7 +67,7 @@ export class KuskusAgent {
 
       // Observe current state
       const client = await this.#session.getActiveSession();
-      const page = createPageDomain(client);
+      const page = createPageDomain(client, this.#session.capabilities);
       const runtime = createRuntimeDomain(client);
 
       const [currentUrl, screenshot, html] = await Promise.all([

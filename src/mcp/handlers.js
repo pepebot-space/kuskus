@@ -46,8 +46,9 @@ export async function handleToolCall(name, args) {
   // Screenshot — returns image content block
   if (name === 'browser_screenshot') {
     const client = await sm.getActiveSession();
-    const page = createPageDomain(client);
+    const page = createPageDomain(client, sm.capabilities);
     const data = await page.screenshot({ fullPage: args.full_page ?? false });
+    if (!data) return { content: [{ type: 'text', text: 'Screenshot not supported by this browser.' }] };
     return { content: [{ type: 'image', data, mimeType: 'image/png' }] };
   }
 
@@ -72,11 +73,12 @@ export async function handleToolCall(name, args) {
 export async function handleResourceRead(uri) {
   const { session: sm } = await getSession();
   const client = await sm.getActiveSession();
-  const page = createPageDomain(client);
+  const page = createPageDomain(client, sm.capabilities);
   const runtime = createRuntimeDomain(client);
 
   if (uri === 'browser://screenshot') {
     const data = await page.screenshot();
+    if (!data) return { contents: [{ uri, mimeType: 'text/plain', text: 'Screenshot not supported.' }] };
     return { contents: [{ uri, mimeType: 'image/png', blob: data }] };
   }
   if (uri === 'browser://page/content') {

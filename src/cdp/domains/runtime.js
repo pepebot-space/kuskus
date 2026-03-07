@@ -11,13 +11,31 @@ export function createRuntimeDomain(client) {
      * @returns {Promise<any>}
      */
     async evaluate(expression, returnByValue = true) {
-      const { result, exceptionDetails } = await client.send('Runtime.evaluate', {
+      const run = () => client.send('Runtime.evaluate', {
         expression,
         returnByValue,
         awaitPromise: true,
         userGesture: true,
       });
 
+      let res;
+      try {
+        res = await run();
+      } catch (err) {
+        // Context may have been invalidated by a navigation — wait and retry
+        if (err.message?.includes('context') || err.message?.includes('Context')) {
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            await new Promise((r) => setTimeout(r, attempt * 400));
+            try { res = await run(); break; } catch (e) {
+              if (attempt === 3) throw e;
+            }
+          }
+        } else {
+          throw err;
+        }
+      }
+
+      const { result, exceptionDetails } = res;
       if (exceptionDetails) {
         const msg = exceptionDetails.exception?.description || exceptionDetails.text;
         throw new Error(`JS evaluation error: ${msg}`);

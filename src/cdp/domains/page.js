@@ -1,8 +1,9 @@
 /**
  * Page CDP domain helpers.
  * @param {import('../client.js').CDPClient} client
+ * @param {{ screenshot?: boolean }} capabilities
  */
-export function createPageDomain(client) {
+export function createPageDomain(client, capabilities = {}) {
   return {
     async navigate(url, timeout = 30_000) {
       const [result] = await Promise.all([
@@ -20,15 +21,14 @@ export function createPageDomain(client) {
     },
 
     async screenshot({ format = 'png', quality = 80, fullPage = false } = {}) {
+      if (capabilities.screenshot === false) return null;
       const params = { format, quality };
       if (fullPage) {
-        // Get scroll dimensions first
-        const { result } = await client.send('Runtime.evaluate', {
+        const dims = await client.send('Runtime.evaluate', {
           expression: 'JSON.stringify({w: document.body.scrollWidth, h: document.body.scrollHeight})',
           returnByValue: true,
-        });
-        const dims = JSON.parse(result.value);
-        params.clip = { x: 0, y: 0, width: dims.w, height: dims.h, scale: 1 };
+        }).then(({ result }) => JSON.parse(result.value)).catch(() => null);
+        if (dims) params.clip = { x: 0, y: 0, width: dims.w, height: dims.h, scale: 1 };
       }
       const { data } = await client.send('Page.captureScreenshot', params);
       return data; // base64
