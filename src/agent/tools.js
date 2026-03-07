@@ -139,6 +139,19 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'extract_serp_results',
+    description: 'Extract top search results (title, URL, snippet) from the current Google results page.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default 5, max 10).',
+        },
+      },
+    },
+  },
+  {
     name: 'wait',
     description: 'Wait for a specified number of milliseconds.',
     input_schema: {

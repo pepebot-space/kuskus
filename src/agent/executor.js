@@ -65,19 +65,30 @@ export class Executor {
       }
 
       case 'type_text': {
-        const sel = JSON.stringify(params.selector);
+        const selectors = buildSelectorVariants(params.selector);
+        const selectorsCode = JSON.stringify(selectors);
         const text = JSON.stringify(params.text);
         const clear = params.clear_first !== false;
         // Use JS to set value + fire events — more reliable than simulated keystrokes
         const result = await runtime.evaluate(`(function(){
-          const el = document.querySelector(${sel});
-          if (!el) return 'NOT_FOUND';
-          el.focus();
-          ${clear ? 'el.value = "";' : ''}
-          el.value = ${text};
-          el.dispatchEvent(new Event('input',  { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          return el.value;
+          const selectors = ${selectorsCode};
+          for (const selector of selectors) {
+            const el = document.querySelector(selector);
+            if (!el) continue;
+            el.focus?.();
+            ${clear ? 'if ("value" in el) { el.value = ""; } else if (el.isContentEditable) { el.textContent = ""; }' : ''}
+            if ("value" in el) {
+              el.value = ${text};
+            } else if (el.isContentEditable) {
+              el.textContent = ${text};
+            } else {
+              continue;
+            }
+            el.dispatchEvent?.(new Event('input',  { bubbles: true }));
+            el.dispatchEvent?.(new Event('change', { bubbles: true }));
+            return el.value ?? el.textContent ?? '';
+          }
+          return 'NOT_FOUND';
         })()`);
         if (result === 'NOT_FOUND') throw new Error(`Element not found: ${params.selector}`);
         return `Typed "${params.text}" into "${params.selector}"`;
@@ -126,6 +137,56 @@ export class Executor {
         }
 
         throw new Error(`Navigation did not complete within ${timeout}ms`);
+      }
+
+      case 'extract_serp_results': {
+        const limit = Math.max(1, Math.min(Number.isFinite(params.limit) ? Number(params.limit) : 5, 10));
+        const raw = await runtime.evaluate(`(() => {
+          const max = ${limit};
+          const seen = new Set();
+          const results = [];
+          const addResult = (titleEl, linkEl, snippetEl) => {
+            if (!titleEl || !linkEl) return;
+            const url = linkEl.href || '';
+            const title = titleEl.innerText?.trim();
+            if (!url || !title || seen.has(url)) return;
+            seen.add(url);
+            const snippet = snippetEl?.innerText?.trim?.() || '';
+            results.push({ title, url, snippet });
+          };
+          const snippetSelector = 'div.VwiC3b, span.aCOpRe, div[data-sncf]';
+          const containerSelector = '#search div.g, #search div[data-sokoban-container="true"], #search div[jscontroller="SC7lYd"]';
+          const sections = Array.from(document.querySelectorAll(containerSelector));
+          for (const section of sections) {
+            const link = section.querySelector('a');
+            const title = section.querySelector('h3');
+            if (!link || !title) continue;
+            const snippet = section.querySelector(snippetSelector);
+            addResult(title, link, snippet);
+            if (results.length >= max) break;
+          }
+          if (results.length < max) {
+            const extra = Array.from(document.querySelectorAll('#search a h3'));
+            for (const title of extra) {
+              const link = title.closest('a');
+              const container = title.closest(containerSelector) || title.parentElement?.parentElement;
+              const snippet = container?.querySelector(snippetSelector);
+              addResult(title, link, snippet);
+              if (results.length >= max) break;
+            }
+          }
+          return JSON.stringify(results);
+        })()`);
+        let parsed;
+        try {
+          parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        } catch {
+          parsed = [];
+        }
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          throw new Error('No search results could be extracted');
+        }
+        return JSON.stringify(parsed.slice(0, limit), null, 2);
       }
 
       case 'wait': {
@@ -232,4 +293,24 @@ export class Executor {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function buildSelectorVariants(selector) {
+  const variants = new Set();
+  if (selector) variants.add(selector);
+
+  const trimmed = selector?.trim() ?? '';
+  if (trimmed.startsWith('input')) {
+    variants.add(trimmed.replace(/^input/i, 'textarea'));
+  }
+  if (trimmed.startsWith('textarea')) {
+    variants.add(trimmed.replace(/^textarea/i, 'input'));
+  }
+
+  const nameMatch = trimmed.match(/\[name\s*=\s*(['"])([^'"\]]+)\1\]/i);
+  if (nameMatch) {
+    variants.add(`[name="${nameMatch[2]}"]`);
+  }
+
+  return Array.from(variants).filter(Boolean);
 }

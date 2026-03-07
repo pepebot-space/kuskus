@@ -8,6 +8,7 @@ Kuskus is a CLI and MCP server that lets an AI agent control a real Chrome/Chrom
 - Exposes a full tool palette (navigation, DOM queries, input, waits, screenshots) via JSON-schema definitions.
 - Provides a REPL for interactive runs and a script runner for batch tasks.
 - MCP server mode surfaces the same browser tools to host applications (Claude Desktop, Cursor, etc.).
+- Includes helpers for search tasks (e.g., `extract_serp_results` to capture Google result titles/snippets quickly).
 
 ## Quick Start (CLI)
 ```bash
