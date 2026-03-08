@@ -29,12 +29,242 @@ defineTool('navigate', 'Navigate to a URL', z.object({
 }), async ({ url }) => {
     logger.tool('navigate →', url);
     const page = await getPage();
-    const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+    let targetUrl = url;
+    let searchGuardNote = '';
+
+    try {
+        const parsed = new URL(url);
+        const host = parsed.host.toLowerCase();
+        const path = parsed.pathname.toLowerCase();
+        const hasQueryParam = parsed.searchParams.has('q');
+
+        const isGoogleSearch = /(^|\.)google\./i.test(host) && path.startsWith('/search');
+        const isBingSearch = host.includes('bing.com') && path.startsWith('/search');
+        const isYahooSearch = host === 'search.yahoo.com' && path.startsWith('/search');
+
+        if (hasQueryParam && (isGoogleSearch || isBingSearch || isYahooSearch)) {
+            targetUrl = `${parsed.protocol}//${parsed.host}/`;
+            searchGuardNote = `Direct search query navigation blocked for ${parsed.host}. Landed on homepage instead; use the on-page search box to continue.`;
+            logger.tool('navigate search-guard → redirected to homepage');
+        }
+    } catch (err) {
+        logger.tool('navigate URL parse error →', err.message);
+    }
+
+    const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
     const title = await page.title();
+    let textPreview = '';
+    let htmlPreview = '';
+    let formHints = [];
+    let dataTestIds = [];
+    let structuredData = [];
+    try {
+        const pageData = await page.evaluate(() => {
+            const body = document.body;
+
+            function simplify(str, max = 160) {
+                if (!str) return '';
+                const normalized = str.replace(/\s+/g, ' ').trim();
+                return normalized.length > max ? normalized.slice(0, max) + '…' : normalized;
+            }
+
+            function buildSelector(el) {
+                if (!el) return '';
+                const tag = el.tagName.toLowerCase();
+                if (el.id) return `#${el.id}`;
+                const name = el.getAttribute('name');
+                if (name) return `${tag}[name="${name}"]`;
+                const aria = el.getAttribute('aria-label');
+                if (aria) return `${tag}[aria-label="${aria}"]`;
+                const placeholder = el.getAttribute('placeholder');
+                if (placeholder) return `${tag}[placeholder="${placeholder}"]`;
+                const type = el.getAttribute('type');
+                if (type) return `${tag}[type="${type}"]`;
+                return tag;
+            }
+
+            const inputs = Array.from(document.querySelectorAll('input, textarea, button')).slice(0, 30).map((el) => ({
+                selector: buildSelector(el),
+                tag: el.tagName.toLowerCase(),
+                id: simplify(el.id, 120),
+                name: simplify(el.getAttribute('name'), 120),
+                placeholder: simplify(el.getAttribute('placeholder'), 160),
+                ariaLabel: simplify(el.getAttribute('aria-label'), 160),
+                type: simplify(el.getAttribute('type'), 60),
+                classes: simplify(el.className, 160),
+                text: simplify(el.innerText, 160),
+                value: simplify(el.value, 120),
+            })).filter(Boolean);
+
+            const dataTestIds = Array.from(document.querySelectorAll('[data-testid]'))
+                .slice(0, 40)
+                .map((el) => {
+                    const value = el.getAttribute('data-testid');
+                    if (!value) return null;
+                    const tag = el.tagName.toLowerCase();
+                    return {
+                        selector: `${tag}[data-testid="${value}"]`,
+                        dataTestId: value,
+                        text: simplify(el.innerText, 160),
+                    };
+                })
+                .filter(Boolean);
+
+            const text = body?.innerText || '';
+            const html = body?.innerHTML || '';
+
+            return {
+                text: text.slice(0, 4000),
+                html: html.slice(0, 4000),
+                inputs,
+                dataTestIds,
+            };
+        });
+
+        textPreview = (pageData.text || '').trim();
+        htmlPreview = pageData.html || '';
+        formHints = pageData.inputs || [];
+        dataTestIds = pageData.dataTestIds || [];
+    } catch (err) {
+        logger.tool('navigate textPreview error →', err.message);
+    }
+
+    try {
+        structuredData = await page.evaluate(() => {
+            const cache = window.__cache || window.__CACHE__;
+            if (!cache) return [];
+
+            const simplify = (str, max = 160) => {
+                if (!str) return '';
+                const normalized = String(str).replace(/\s+/g, ' ').trim();
+                return normalized.length > max ? normalized.slice(0, max) + '…' : normalized;
+            };
+
+            const resolveRef = (ref) => {
+                if (!ref) return null;
+                if (typeof ref === 'string') return cache[ref] || null;
+                if (typeof ref === 'object' && ref !== null) {
+                    const key = ref.id || ref.__ref;
+                    return key ? cache[key] || null : null;
+                }
+                return null;
+            };
+
+            const products = [];
+            for (const key of Object.keys(cache)) {
+                if (!/^searchProductV5Product\d+$/i.test(key)) continue;
+                const entry = cache[key];
+                if (!entry || !entry.name) continue;
+
+                const priceEntry = resolveRef(entry.price);
+                const priceText = priceEntry?.text || priceEntry?.priceDisplay || '';
+
+                products.push({
+                    name: simplify(entry.name, 200),
+                    price: simplify(priceText, 80),
+                    url: entry.url || '',
+                });
+                if (products.length >= 10) break;
+            }
+            return products;
+        }) || [];
+    } catch (err) {
+        logger.tool('navigate structuredData error →', err.message);
+    }
+
+    try {
+        const currentUrl = page.url();
+        if (/bing\.com\/.+/.test(currentUrl) && /[?&]q=/.test(currentUrl)) {
+            const bingResults = await page.evaluate(() => {
+                const simplify = (str, max = 200) => {
+                    if (!str) return '';
+                    const normalized = str.replace(/\s+/g, ' ').trim();
+                    return normalized.length > max ? normalized.slice(0, max) + '…' : normalized;
+                };
+                const results = Array.from(document.querySelectorAll('#b_results > li.b_algo'))
+                    .slice(0, 8)
+                    .map((item, index) => {
+                        const link = item.querySelector('a');
+                        const caption = item.querySelector('p, .b_caption p, .b_paractl');
+                        const cite = item.querySelector('cite');
+                        return {
+                            name: simplify(link?.innerText || ''),
+                            url: link?.href || '',
+                            snippet: simplify(caption?.innerText || ''),
+                            displayUrl: simplify(cite?.innerText || ''),
+                            rank: index + 1,
+                            source: 'bing_search',
+                        };
+                    })
+                    .filter(entry => entry.name && entry.url);
+
+                const news = Array.from(document.querySelectorAll('#b_results .b_nwsCard'))
+                    .slice(0, 6)
+                    .map((item, index) => {
+                        const link = item.querySelector('a');
+                        const caption = item.querySelector('div.item_snippet, p');
+                        const source = item.querySelector('.source');
+                        return {
+                            name: simplify(link?.innerText || ''),
+                            url: link?.href || '',
+                            snippet: simplify(caption?.innerText || ''),
+                            outlet: simplify(source?.innerText || ''),
+                            rank: index + 1,
+                            source: 'bing_news',
+                        };
+                    })
+                    .filter(entry => entry.name && entry.url);
+
+                const calculator = document.querySelector('#b_results .b_focusLabel + div');
+                const focusText = simplify(calculator?.innerText || '');
+                const focus = focusText ? [{ name: 'bing_focus', url: '', snippet: focusText, source: 'bing_focus' }] : [];
+
+                return [...focus, ...results, ...news];
+            });
+            if (bingResults && bingResults.length) {
+                structuredData = structuredData.concat(bingResults);
+            }
+        }
+    } catch (err) {
+        logger.tool('navigate bing extraction error →', err.message);
+    }
+
+    const strategyHints = [];
+    if (searchGuardNote) {
+        strategyHints.push(searchGuardNote);
+    }
+    try {
+        const currentUrl = page.url();
+        if (/tokopedia\.com\/search/i.test(currentUrl)) {
+            strategyHints.push('Tokopedia provides SSR results at https://www.tokopedia.com/find/<query>. Consider navigating there for easier parsing.');
+        }
+        const combinedPreview = `${textPreview} ${htmlPreview}`.toLowerCase();
+        const captchaSignals = [
+            'our systems have detected unusual traffic from your computer network',
+            'before we can process your request',
+            'are you a robot?',
+            'sorry, but we could not process your request',
+            'enter the characters you see below',
+            'press & hold to confirm you are not a robot'
+        ];
+        if (captchaSignals.some(signal => combinedPreview.includes(signal))) {
+            strategyHints.push('Search engine returned a captcha challenge. Switch to an alternate engine like https://www.bing.com and continue the search there.');
+        }
+    } catch (err) {
+        logger.tool('navigate hint generation error →', err.message);
+    }
+
     return {
         url: page.url(),
         title,
         status: response?.status() ?? null,
+        textPreview,
+        htmlPreview,
+        formHints,
+        dataTestIds,
+        structuredData,
+        strategyHints,
     };
 });
 
@@ -78,12 +308,49 @@ defineTool('type', 'Type text into an element', z.object({
 }), async ({ selector, text, clearFirst }) => {
     logger.tool('type →', selector, text);
     const page = await getPage();
-    await page.waitForSelector(selector, { timeout: 10000 });
-    if (clearFirst) {
-        await page.click(selector, { clickCount: 3 });
-        await page.keyboard.press('Backspace');
+    const randomDelay = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+    const wait = async (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    let targetSelector = selector;
+    let handle;
+    try {
+        handle = await page.waitForSelector(targetSelector, { timeout: 8000, visible: true });
+    } catch (err) {
+        if (targetSelector.includes('input[') && !targetSelector.includes('textarea[')) {
+            const fallback = targetSelector.replace('input', 'textarea');
+            try {
+                handle = await page.waitForSelector(fallback, { timeout: 8000, visible: true });
+                targetSelector = fallback;
+                logger.tool('type fallback selector →', fallback);
+            } catch (err2) {
+                throw err;
+            }
+        } else {
+            throw err;
+        }
     }
-    await page.type(selector, text);
+
+    const box = await handle.boundingBox();
+    if (box) {
+        await wait(randomDelay(80, 180));
+        await page.mouse.move(box.x + box.width / 2 + randomDelay(-5, 5), box.y + box.height / 2 + randomDelay(-3, 3), { steps: randomDelay(5, 12) });
+        await wait(randomDelay(80, 160));
+    }
+
+    await handle.focus();
+    await wait(randomDelay(120, 260));
+
+    if (clearFirst) {
+        await handle.click({ clickCount: 3, delay: randomDelay(80, 120) });
+        await wait(randomDelay(80, 160));
+        await page.keyboard.press('Backspace');
+        await wait(randomDelay(120, 220));
+    } else {
+        await handle.click({ delay: randomDelay(80, 140) });
+        await wait(randomDelay(100, 220));
+    }
+    await page.type(targetSelector, text, { delay: randomDelay(70, 150) });
+    await wait(randomDelay(80, 180));
     return { typed: text, into: selector };
 });
 
@@ -141,9 +408,17 @@ defineTool('snapshot', 'Get current page URL, title, and DOM snapshot', z.object
     const url = page.url();
     const title = await page.title();
     const el = selector || 'body';
-    const text = await page.evaluate((sel) => {
+    const { text, html, testIds } = await page.evaluate((sel) => {
         const node = document.querySelector(sel);
-        if (!node) return '(element not found)';
+        if (!node) {
+            return { text: '(element not found)', html: '', testIds: [] };
+        }
+
+        function simplify(str, max = 160) {
+            if (!str) return '';
+            const normalized = str.replace(/\s+/g, ' ').trim();
+            return normalized.length > max ? normalized.slice(0, max) + '…' : normalized;
+        }
 
         function walk(n, depth = 0) {
             const indent = '  '.repeat(depth);
@@ -172,10 +447,33 @@ defineTool('snapshot', 'Get current page URL, title, and DOM snapshot', z.object
             return children ? `${header}\n${children}` : header;
         }
 
-        return walk(node);
+        const snippet = node.outerHTML
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 4000);
+
+        const ids = Array.from(node.querySelectorAll('[data-testid]'))
+            .slice(0, 30)
+            .map((el) => {
+                const value = el.getAttribute('data-testid');
+                if (!value) return null;
+                const tag = el.tagName.toLowerCase();
+                return {
+                    selector: `${tag}[data-testid="${value}"]`,
+                    dataTestId: value,
+                    text: simplify(el.innerText, 160),
+                };
+            })
+            .filter(Boolean);
+
+        return {
+            text: walk(node),
+            html: snippet,
+            testIds: ids,
+        };
     }, el);
 
-    return { url, title, snapshot: text.slice(0, 8000) };
+    return { url, title, snapshot: text.slice(0, 8000), htmlSnippet: html, dataTestIds: testIds };
 });
 
 defineTool('screenshot', 'Take a screenshot of the current page', z.object({
@@ -387,6 +685,8 @@ export async function executeTool(name, params = {}) {
         throw new Error(`Unknown tool: ${name}`);
     }
     const parsed = tool.schema.parse(params);
+    const preDelay = 100 + Math.floor(Math.random() * 250);
+    await new Promise(resolve => setTimeout(resolve, preDelay));
     const result = await tool.handler(parsed);
     return result;
 }

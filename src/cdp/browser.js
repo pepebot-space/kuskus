@@ -65,6 +65,11 @@ export async function getPage() {
     const pages = await browser.pages();
     _page = pages[0] || await browser.newPage();
 
+    await _page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36');
+    await _page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9,id;q=0.8'
+    });
+
     _page.setDefaultNavigationTimeout(config.navigationTimeout);
     _page.setDefaultTimeout(config.toolTimeout);
 
