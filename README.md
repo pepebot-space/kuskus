@@ -1,5 +1,9 @@
 # Kuskus — Local Chrome Automation
 
+<p align="center">
+  <img src="assets/logo.png" alt="Kuskus Logo" width="300"/>
+</p>
+
 This repository refactors the former Kuskus project into a lightweight implementation of the [Kuskus](https://github.com/kuskus/mcp) server. It ships a stdio MCP server, a typed tool catalog, and a Chrome extension that you can load locally. Together they let any MCP-capable client (Claude Desktop, Cursor, Windsurf, etc.) automate your existing Chrome session without uploading data to a remote service.
 
 ---
