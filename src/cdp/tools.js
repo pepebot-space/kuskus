@@ -11,6 +11,7 @@
  */
 
 import { z } from 'zod';
+import { gunzipSync } from 'node:zlib';
 import { getPage, getCDPSession, closeBrowser } from './browser.js';
 import { logger } from '../utils/logger.js';
 
@@ -391,11 +392,53 @@ defineTool('scroll', 'Scroll the page or an element', z.object({
 }), async ({ direction, amount = 500, selector }) => {
     logger.tool('scroll →', direction, amount, selector);
     const page = await getPage();
-    const scrollCode = selector
-        ? `document.querySelector('${selector}').scrollBy(${direction === 'left' ? -amount : direction === 'right' ? amount : 0}, ${direction === 'up' ? -amount : direction === 'down' ? amount : 0})`
-        : `window.scrollBy(${direction === 'left' ? -amount : direction === 'right' ? amount : 0}, ${direction === 'up' ? -amount : direction === 'down' ? amount : 0})`;
-    await page.evaluate(scrollCode);
-    return { scrolled: direction, amount };
+
+    const result = await page.evaluate(({ direction, amount, selector }) => {
+        const dx = direction === 'left' ? -amount : direction === 'right' ? amount : 0;
+        const dy = direction === 'up' ? -amount : direction === 'down' ? amount : 0;
+
+        if (selector) {
+            const target = document.querySelector(selector);
+            if (!target) {
+                return { error: `Element not found for selector: ${selector}` };
+            }
+
+            if (typeof target.scrollBy === 'function') {
+                target.scrollBy(dx, dy);
+            } else {
+                target.scrollTop = (target.scrollTop || 0) + dy;
+                target.scrollLeft = (target.scrollLeft || 0) + dx;
+            }
+
+            return {
+                target: selector,
+                scrollTop: target.scrollTop ?? null,
+                scrollLeft: target.scrollLeft ?? null,
+                scrollHeight: target.scrollHeight ?? null,
+                clientHeight: target.clientHeight ?? null,
+            };
+        }
+
+        window.scrollBy(dx, dy);
+        return {
+            target: 'window',
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            innerHeight: window.innerHeight,
+            documentHeight: document.documentElement?.scrollHeight ?? null,
+        };
+    }, { direction, amount, selector });
+
+    if (result?.error) {
+        throw new Error(result.error);
+    }
+
+    return {
+        scrolled: direction,
+        amount,
+        selector: selector || null,
+        position: result,
+    };
 });
 
 // ─── Inspection ──────────────────────────────────────────────────────────────
@@ -599,19 +642,82 @@ defineTool('startTrace', 'Start a performance trace', z.object({
 defineTool('stopTrace', 'Stop performance trace and return data', z.object({}), async () => {
     logger.tool('stopTrace');
     const page = await getPage();
-    const buffer = await page.tracing.stop();
-    const trace = JSON.parse(buffer.toString());
-    // Extract summary metrics
-    const events = trace.traceEvents || [];
-    const duration = events.length > 0
-        ? (events[events.length - 1].ts - events[0].ts) / 1000
-        : 0;
-    return {
-        tracing: 'stopped',
-        eventCount: events.length,
-        durationMs: Math.round(duration),
-        summary: `${events.length} events over ${Math.round(duration)}ms`,
-    };
+    let buffer;
+    try {
+        buffer = await page.tracing.stop();
+    } catch (err) {
+        const message = err?.message || String(err);
+        if (message.toLowerCase().includes('tracing is not started')) {
+            return {
+                tracing: 'not_running',
+                eventCount: 0,
+                durationMs: 0,
+                summary: 'Tracing was not active when stopTrace was called.',
+            };
+        }
+        logger.tool('stopTrace stop error →', message);
+        return {
+            tracing: 'error',
+            eventCount: 0,
+            durationMs: 0,
+            summary: 'Tracing could not be stopped.',
+            error: message,
+        };
+    }
+
+    if (!buffer || buffer.length === 0) {
+        return {
+            tracing: 'stopped',
+            eventCount: 0,
+            durationMs: 0,
+            summary: 'Tracing stopped, but no data was collected.',
+        };
+    }
+
+    let text;
+    try {
+        const isGzip = buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+        const payload = isGzip ? gunzipSync(buffer) : buffer;
+        text = payload.toString('utf8')
+            .replace(/^\uFEFF/, '')
+            .trimStart();
+        const firstBrace = text.indexOf('{');
+        if (firstBrace > 0) {
+            text = text.slice(firstBrace);
+        }
+    } catch (err) {
+        logger.tool('stopTrace decode error →', err.message);
+        return {
+            tracing: 'stopped',
+            eventCount: 0,
+            durationMs: 0,
+            summary: 'Trace captured but the payload could not be decoded.',
+            error: err.message,
+        };
+    }
+
+    try {
+        const trace = JSON.parse(text);
+        const events = trace.traceEvents || [];
+        const duration = events.length > 0
+            ? (events[events.length - 1].ts - events[0].ts) / 1000
+            : 0;
+        return {
+            tracing: 'stopped',
+            eventCount: events.length,
+            durationMs: Math.round(duration),
+            summary: `${events.length} events over ${Math.round(duration)}ms`,
+        };
+    } catch (err) {
+        logger.tool('stopTrace parse error →', err.message);
+        return {
+            tracing: 'stopped',
+            eventCount: 0,
+            durationMs: 0,
+            summary: 'Trace captured but could not be parsed as JSON.',
+            error: err.message,
+        };
+    }
 });
 
 // ─── Accessibility ───────────────────────────────────────────────────────────
