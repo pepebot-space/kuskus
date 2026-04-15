@@ -38,19 +38,17 @@ A complete Chrome DevTools Protocol (CDP) tool that provides browser automation 
 ## Quick Start
 
 ```bash
-npm install
-
 # List tools
-node bin/kuskus.js list
+npx @porcupine/kuskus list
 
 # Run a single tool
-node bin/kuskus.js call navigate '{"url":"https://example.com"}'
+npx @porcupine/kuskus call navigate '{"url":"https://example.com"}'
 
 # Multi-step agent (requires OPENAI_API_KEY)
-node bin/kuskus.js run "go to example.com and get the title"
+npx @porcupine/kuskus run "go to example.com and get the title"
 
 # Start MCP server (for Claude Desktop, Cursor, etc.)
-node bin/kuskus.js mcp
+npx @porcupine/kuskus mcp
 ```
 
 ## CLI Commands
@@ -157,8 +155,8 @@ For Claude Desktop or Cursor, add to your MCP config:
 {
   "mcpServers": {
     "kuskus": {
-      "command": "node",
-      "args": ["/path/to/kuskus/bin/kuskus.js", "mcp"]
+      "command": "npx",
+      "args": ["@porcupine/kuskus", "mcp"]
     }
   }
 }
