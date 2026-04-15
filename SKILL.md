@@ -26,7 +26,7 @@ A complete Chrome DevTools Protocol (CDP) tool that provides browser automation 
             │                │
           ┌─▼────────────────▼──┐
           │    CDP Tools Layer  │  src/cdp/tools.js
-          │    (20 tools)       │
+          │    (23 tools)       │
           └─────────┬───────────┘
                     │
           ┌─────────▼───────────┐
@@ -67,7 +67,7 @@ npx @porcupine/kuskus mcp
 - `--cdp-port <port>` — CDP port (default: 9222)
 - `--chrome-path <path>` — Path to Chrome/Chromium binary
 
-## Tool Catalog (20 tools)
+## Tool Catalog (23 tools)
 
 ### Navigation
 | Tool | Description |
@@ -90,7 +90,8 @@ npx @porcupine/kuskus mcp
 ### Inspection
 | Tool | Description |
 |------|-------------|
-| `snapshot` | Get page URL, title, DOM snapshot |
+| `readPage` | Extract clean main content (article body) as plain text — preferred for reading/summarizing pages |
+| `snapshot` | Get page URL, title, DOM snapshot (use to find selectors, not to read content) |
 | `screenshot` | Capture PNG screenshot |
 | `getConsoleLogs` | Get console log entries |
 | `evaluate` | Execute JavaScript |

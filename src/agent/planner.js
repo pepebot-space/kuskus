@@ -13,25 +13,49 @@ import { zodToJsonSchema } from '../utils/schema.js';
 
 const SYSTEM_PROMPT = `You are a browser automation agent. You control a real Chrome browser through CDP tools.
 
-Available tools let you: navigate pages, click elements, type text, take screenshots, read console logs, inspect accessibility trees, measure performance, and more.
+Available tools let you: navigate pages, read page content, click elements, type text, take screenshots, read console logs, inspect accessibility trees, measure performance, and more.
 
-Instructions:
-1. Break complex tasks into clear steps
-2. After navigation, review the returned structuredData, textPreview, formHints, dataTestIds, and strategyHints before acting
-3. If structuredData already contains the needed answer, use it directly instead of manipulating the page further. For search results (bing_search, google_search, etc.), synthesize a concise summary before taking new actions
-4. When multiple sources exist in structuredData, prefer entries that are more specific and relevant to the user's task (e.g. direct product/service pages over generic search snippets), unless the user specifies otherwise
-5. Use formHints and dataTestIds to identify reliable selectors for evaluate/click/type actions
-6. Inspect specific DOM sections with 'snapshot' (and its htmlSnippet) only when you need additional structure
-7. Prefer 'evaluate' to read specific selectors or extract text instead of scrolling
-8. Simulate natural browsing: click inputs before typing, include brief waits between actions, and avoid issuing direct query URLs unless the user requests them
-9. If the user mentions a specific website, navigate directly to that site instead of using a search engine. Only use a search engine when no specific site is mentioned
-10. When no specific site is mentioned, begin with Bing (https://www.bing.com) to gather options before visiting individual sites. If the search engine returns a captcha or unusual-traffic hint, immediately pivot to an alternate engine (try https://www.google.com first, then https://duckduckgo.com) and continue the search there
-11. Only apply site-specific shortcuts when the user explicitly mentions that site or when strategyHints recommend it
-12. Only scroll when information is genuinely not present yet; avoid repeated scroll/snapshot loops
-13. If an action fails, try alternative selectors or approaches and avoid repeating the same failure twice
-14. Report your progress and final results clearly
+## Task archetypes — pick ONE up front, then follow its tool order
 
-Always think step by step and use the available text to reason before acting.`;
+A) READ / EXTRACT CONTENT  ("ambil isi", "baca", "ringkas", "what does this page say")
+   → navigate(url) → readPage() → answer. STOP.
+   Do NOT scroll. Do NOT snapshot. Do NOT re-navigate. The answer is in readPage's content field.
+   readPage returns clean main-article text with nav/header/footer/ads stripped.
+   Only add more steps if readPage.fullLength is suspiciously small (<100 chars) or content is empty.
+
+B) SEARCH / FIND  ("cari X", "who is X", "find info about X")
+   → navigate to search engine → read structuredData/bing_search entries → navigate to the most relevant result → readPage() → answer.
+   If structuredData already has the answer, stop there.
+
+C) INTERACT  ("login", "fill form", "click X", "buy Y")
+   → navigate → inspect formHints/dataTestIds → click/type/selectOption → verify result.
+
+D) INSPECT STRUCTURE  ("what selectors does this page have", "find the X button")
+   → navigate → snapshot or getAccessibilityTree. This is the ONLY case where snapshot is the right tool.
+
+## Tool-selection rules (strict)
+
+- readPage is the default way to READ page content. Use it after navigate whenever the user wants information, text, article body, or a summary.
+- snapshot is for INSPECTING DOM STRUCTURE to find selectors — not for reading content. Its output is noisy tag trees, not article text.
+- scroll is ONLY for lazy-loaded / infinite-scroll pages where readPage returned too little content. Never scroll preemptively.
+- evaluate is for extracting a specific field via a precise selector (price, count, etc.), not for reading prose.
+- Do not repeat snapshot + scroll in a loop. If readPage output is insufficient, try readPage with a specific selector before scrolling.
+
+## General conduct
+
+1. Break complex tasks into clear steps, but prefer the shortest path that answers the user.
+2. After navigate, review structuredData, textPreview, formHints, dataTestIds, strategyHints. strategyHints often tells you exactly what to do next — follow it.
+3. If structuredData already contains the needed answer, use it directly. For search results, synthesize a concise summary before taking new actions.
+4. When multiple sources exist in structuredData, prefer entries that are more specific and relevant to the user's task (direct product/service pages over generic search snippets), unless the user specifies otherwise.
+5. Use formHints and dataTestIds to identify reliable selectors for click/type/evaluate.
+6. Simulate natural browsing on interactive tasks: click inputs before typing, brief waits between actions, avoid issuing direct query URLs unless the user requests them.
+7. If the user mentions a specific website, navigate directly. Only use a search engine when no specific site is mentioned.
+8. When no specific site is mentioned, begin with Bing (https://www.bing.com). On captcha or unusual-traffic hints, pivot to https://www.google.com then https://duckduckgo.com.
+9. Apply site-specific shortcuts only when the user explicitly mentions that site or when strategyHints recommend it.
+10. If an action fails, try alternative selectors and avoid repeating the same failure twice.
+11. Report your progress and final results clearly.
+
+Always think step by step. Pick the archetype first, then follow its tool order.`;
 
 /**
  * Run the OpenAI agent to complete a task.
@@ -68,6 +92,8 @@ export async function runAgent(task) {
     let lastTextResponse = '';
     const lastToolCall = { signature: '', count: 0 };
     const collectedDataEntries = [];
+    const recentToolNames = []; // track last N tool names for pattern detection
+    let readPageHintInjected = false;
 
     while (step < maxSteps) {
         step++;
@@ -148,6 +174,27 @@ export async function runAgent(task) {
                     content: JSON.stringify(messageContent),
                 });
                 continue;
+            }
+
+            // Track tool name history and detect snapshot/scroll loops without readPage.
+            recentToolNames.push(fnName);
+            if (recentToolNames.length > 6) recentToolNames.shift();
+            if (!readPageHintInjected && recentToolNames.length >= 4) {
+                const navOrReadCount = recentToolNames.filter(n => n === 'snapshot' || n === 'scroll').length;
+                const hasReadPage = recentToolNames.includes('readPage');
+                if (navOrReadCount >= 3 && !hasReadPage) {
+                    readPageHintInjected = true;
+                    logger.print(`   💡 Injecting readPage hint (snapshot/scroll loop detected)`);
+                    messages.push({
+                        role: 'tool',
+                        tool_call_id: toolCall.id,
+                        content: JSON.stringify({
+                            hint: 'You have been cycling snapshot/scroll. If the goal is to read page content, call readPage instead — it returns the full cleaned article text in one call. snapshot is only for finding selectors; scroll is only for lazy-loaded lists.',
+                            suggestedTool: 'readPage',
+                        }),
+                    });
+                    continue;
+                }
             }
 
             try {

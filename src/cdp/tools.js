@@ -60,6 +60,8 @@ defineTool('navigate', 'Navigate to a URL', z.object({
     let formHints = [];
     let dataTestIds = [];
     let structuredData = [];
+    let mainContentAvailable = false;
+    let fullTextLength = 0;
     try {
         const pageData = await page.evaluate(() => {
             const body = document.body;
@@ -84,6 +86,33 @@ defineTool('navigate', 'Navigate to a URL', z.object({
                 if (type) return `${tag}[type="${type}"]`;
                 return tag;
             }
+
+            // Main content heuristic — pick the densest meaningful container.
+            function pickMainContainer() {
+                const explicit = document.querySelector('article')
+                    || document.querySelector('main')
+                    || document.querySelector('[role="main"]')
+                    || document.querySelector('#content, #main, .content, .main, .post, .article, .entry-content');
+                if (explicit) return explicit;
+
+                const candidates = Array.from(document.querySelectorAll('div, section'));
+                let best = null;
+                let bestScore = 0;
+                for (const el of candidates) {
+                    const text = (el.innerText || '').trim();
+                    if (text.length < 200) continue;
+                    const tagCount = el.getElementsByTagName('*').length || 1;
+                    const score = text.length / Math.sqrt(tagCount);
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = el;
+                    }
+                }
+                return best || body;
+            }
+
+            const mainContainer = pickMainContainer();
+            const mainText = (mainContainer?.innerText || body?.innerText || '').trim();
 
             const inputs = Array.from(document.querySelectorAll('input, textarea, button')).slice(0, 30).map((el) => ({
                 selector: buildSelector(el),
@@ -112,11 +141,11 @@ defineTool('navigate', 'Navigate to a URL', z.object({
                 })
                 .filter(Boolean);
 
-            const text = body?.innerText || '';
             const html = body?.innerHTML || '';
 
             return {
-                text: text.slice(0, 4000),
+                text: mainText.slice(0, 8000),
+                fullTextLength: mainText.length,
                 html: html.slice(0, 4000),
                 inputs,
                 dataTestIds,
@@ -127,6 +156,8 @@ defineTool('navigate', 'Navigate to a URL', z.object({
         htmlPreview = pageData.html || '';
         formHints = pageData.inputs || [];
         dataTestIds = pageData.dataTestIds || [];
+        fullTextLength = pageData.fullTextLength || 0;
+        mainContentAvailable = fullTextLength > textPreview.length;
     } catch (err) {
         logger.tool('navigate textPreview error →', err.message);
     }
@@ -256,11 +287,17 @@ defineTool('navigate', 'Navigate to a URL', z.object({
         logger.tool('navigate hint generation error →', err.message);
     }
 
+    if (mainContentAvailable) {
+        strategyHints.push(`Main content is ${fullTextLength} chars; textPreview shows first ${textPreview.length}. Call readPage for the full cleaned body text instead of scrolling/snapshotting.`);
+    }
+
     return {
         url: page.url(),
         title,
         status: response?.status() ?? null,
         textPreview,
+        fullTextLength,
+        mainContentAvailable,
         htmlPreview,
         formHints,
         dataTestIds,
@@ -517,6 +554,134 @@ defineTool('snapshot', 'Get current page URL, title, and DOM snapshot', z.object
     }, el);
 
     return { url, title, snapshot: text.slice(0, 8000), htmlSnippet: html, dataTestIds: testIds };
+});
+
+defineTool('readPage', 'Extract clean main content (article body) from the current page as plain text. Use this to read article/post/product-description content. Strips nav/header/footer/ads. Prefer this over snapshot+scroll loops when the task is "read/extract content".', z.object({
+    selector: z.string().optional().describe('Optional CSS selector to override auto-detection of the main content container'),
+    maxChars: z.number().optional().describe('Max characters of content text to return (default: 20000)'),
+    includeLinks: z.boolean().optional().describe('Include list of links found in main content (default: false)'),
+}), async ({ selector, maxChars = 20000, includeLinks = false }) => {
+    logger.tool('readPage', { selector, maxChars, includeLinks });
+    const page = await getPage();
+    const url = page.url();
+    const title = await page.title();
+
+    const result = await page.evaluate(({ overrideSelector, includeLinks }) => {
+        const NOISE_SELECTORS = [
+            'script', 'style', 'noscript', 'template',
+            'nav', 'header', 'footer', 'aside',
+            '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]', '[role="complementary"]',
+            '.nav', '.navbar', '.navigation', '.menu', '.header', '.footer', '.sidebar',
+            '.ads', '.ad', '.advertisement', '.promo', '.cookie', '.banner',
+            '.share', '.social', '.subscribe', '.newsletter', '.related', '.recommendations',
+            '.comments', '#comments',
+        ];
+
+        function pickMainContainer() {
+            if (overrideSelector) {
+                const forced = document.querySelector(overrideSelector);
+                if (forced) return forced;
+            }
+            const explicit = document.querySelector('article')
+                || document.querySelector('main')
+                || document.querySelector('[role="main"]')
+                || document.querySelector('#content, #main, .content, .main, .post, .article, .entry-content');
+            if (explicit) return explicit;
+
+            const candidates = Array.from(document.querySelectorAll('div, section'));
+            let best = null;
+            let bestScore = 0;
+            for (const el of candidates) {
+                const text = (el.innerText || '').trim();
+                if (text.length < 200) continue;
+                const tagCount = el.getElementsByTagName('*').length || 1;
+                const score = text.length / Math.sqrt(tagCount);
+                if (score > bestScore) {
+                    bestScore = score;
+                    best = el;
+                }
+            }
+            return best || document.body;
+        }
+
+        const container = pickMainContainer();
+        if (!container) {
+            return { error: 'No main content container found' };
+        }
+
+        // Clone so we can strip noise without mutating the live DOM.
+        const clone = container.cloneNode(true);
+        for (const sel of NOISE_SELECTORS) {
+            clone.querySelectorAll(sel).forEach((el) => el.remove());
+        }
+
+        const headings = Array.from(clone.querySelectorAll('h1, h2, h3, h4'))
+            .map((h) => {
+                const text = (h.innerText || '').replace(/\s+/g, ' ').trim();
+                return text ? { level: Number(h.tagName.slice(1)), text } : null;
+            })
+            .filter(Boolean)
+            .slice(0, 50);
+
+        const content = (clone.innerText || '')
+            .replace(/\n{3,}/g, '\n\n')
+            .replace(/[ \t]+/g, ' ')
+            .trim();
+
+        let links = [];
+        if (includeLinks) {
+            links = Array.from(clone.querySelectorAll('a[href]'))
+                .map((a) => {
+                    const text = (a.innerText || '').replace(/\s+/g, ' ').trim();
+                    const href = a.getAttribute('href') || '';
+                    if (!text || !href || href.startsWith('#')) return null;
+                    try {
+                        const absolute = new URL(href, document.baseURI).href;
+                        return { text: text.slice(0, 200), href: absolute };
+                    } catch {
+                        return { text: text.slice(0, 200), href };
+                    }
+                })
+                .filter(Boolean)
+                .slice(0, 100);
+        }
+
+        const wordCount = content ? content.split(/\s+/).filter(Boolean).length : 0;
+
+        return {
+            containerTag: container.tagName.toLowerCase(),
+            containerSelector: overrideSelector || null,
+            content,
+            fullLength: content.length,
+            headings,
+            links,
+            wordCount,
+        };
+    }, { overrideSelector: selector || null, includeLinks });
+
+    if (result?.error) {
+        throw new Error(result.error);
+    }
+
+    let content = result.content || '';
+    let truncated = false;
+    if (content.length > maxChars) {
+        content = content.slice(0, maxChars) + '…';
+        truncated = true;
+    }
+
+    return {
+        url,
+        title,
+        containerTag: result.containerTag,
+        containerSelector: result.containerSelector,
+        content,
+        fullLength: result.fullLength,
+        truncated,
+        wordCount: result.wordCount,
+        headings: result.headings,
+        ...(includeLinks ? { links: result.links } : {}),
+    };
 });
 
 defineTool('screenshot', 'Take a screenshot of the current page', z.object({
