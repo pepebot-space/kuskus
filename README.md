@@ -1,431 +1,229 @@
-<p align="center">
-  <img src="assets/logo.png" width="160" alt="Kuskus" />
-</p>
-
-<h1 align="center">Kuskus</h1>
+# Kuskus — Local Chrome Automation
 
 <p align="center">
-  AI browser agent via Chrome DevTools Protocol — CLI + MCP Server
+  <img src="assets/logo.png" alt="Kuskus Logo" width="300"/>
 </p>
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/@porcupine/kuskus"><img src="https://img.shields.io/npm/v/@porcupine/kuskus?color=a78bfa&label=npm" alt="npm" /></a>
-  <img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="node" />
-  <img src="https://img.shields.io/badge/browser-Chromium-blue" alt="Chromium" />
-  <img src="https://img.shields.io/badge/protocol-CDP-blue" alt="CDP" />
-</p>
+This repository refactors the former Kuskus project into a lightweight implementation of the [Kuskus](https://github.com/kuskus/mcp) server. It ships a stdio MCP server, a typed tool catalog, and a Chrome extension that you can load locally. Together they let any MCP-capable client (Claude Desktop, Cursor, Windsurf, etc.) automate your existing Chrome session without uploading data to a remote service.
 
 ---
 
-Kuskus controls a browser directly over the [Chrome DevTools Protocol](https://chromedevtools.github.io/devtools-protocol/) by auto-detecting an installed Chrome/Chromium build (or downloading one on demand).
+## What’s Included
 
-Ships as two artifacts:
+- **CLI / MCP server** – `bin/mcp.js` starts a stdio server that exposes Kuskus tools.
+- **Tool implementations** – Zod-validated schemas and handlers under `src/tools/` covering navigation, interaction, snapshots, and screenshots.
+- **WebSocket bridge** – `src/context.js` + `src/ws.js` manage the single active Chrome connection.
+- **Chrome extension** – `extension/` contains a Manifest V3 service worker and popup UI. The CLI loads it automatically when launching its own browser, but you can also install it manually if you prefer to attach to an existing Chrome session.
+- **Auto-launcher** – the CLI discovers (or downloads) a Chrome/Chromium binary, launches it with `--load-extension`, and provisions an isolated profile + helper symlink.
 
-| | CLI | MCP Server |
-|---|---|---|
-| **Usage** | `kuskus run "task..."` | Claude Desktop, Cursor, OpenCode, etc. |
-| **LLM** | Claude (via `ANTHROPIC_API_KEY`) | Host model — no key needed |
-| **Role** | Full agent loop | Expose browser tools to any AI |
-
----
-
-## Requirements
-
-- Node.js >= 20
-- Chrome or Chromium (auto-detected; falls back to downloading a Chromium build into `~/.local`)
+Everything runs locally: the extension drives your active browser tab, and the MCP server simply forwards tool requests from the host application over a localhost WebSocket.
 
 ---
 
-## CLI
+## Quick Start
 
-### Install
+1. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-```bash
-npm install -g @porcupine/kuskus
-```
+2. **Run the CLI (auto mode)**
+   ```bash
+   npm start
+   ```
+   or directly via
+   ```bash
+   npx @porcupine/kuskus
+   ```
+   The CLI detects your OS, locates Google Chrome (or Chromium). If nothing suitable is found it downloads the latest Chrome-for-Testing build into `~/.local/kuskus/chrome/` (with a helper symlink at `~/.local/bin/kuskus-chrome`). It then launches the browser with the bundled extension via `--load-extension` and waits for the extension to connect automatically.
 
-Or use directly with npx (no install needed):
+3. **(Optional) Manual extension install**
+   If you want to use your own browser session instead of the auto-launched one:
+   - Open `chrome://extensions`
+   - Enable *Developer mode*
+   - Click **Load unpacked** and select the `extension/` directory
+   - Click **Connect** in the popup; also set `KUSKUS_SKIP_LAUNCH=true` before running the CLI so it attaches to your existing browser.
 
-```bash
-npx @porcupine/kuskus run "your task here"
-```
+4. **Attach from your MCP client**
+   ```bash
+   mcp-server-kuskus
+   ```
+   (installed with this package). The server communicates over stdio, so no additional arguments are required.
 
-### Setup
-
-```bash
-cp .env.example .env
-```
-
-Set the API key for your chosen provider:
-
-```env
-# Anthropic (Claude) — default
-ANTHROPIC_API_KEY=sk-ant-...
-
-# OpenAI
-OPENAI_API_KEY=sk-...
-```
-
-Provider is **auto-detected from the model name** — no need to set it explicitly:
-
-| Model prefix | Provider |
-|---|---|
-| `claude-*` | Anthropic |
-| `gpt-*`, `o1*`, `o3*`, `o4*`, `chatgpt-*` | OpenAI |
-
-### Commands
-
-#### `run` — one-shot task
-
-```bash
-kuskus run "go to news.ycombinator.com and summarize the top 5 posts"
-```
-
-Options:
-
-```
---cdp-url <url>      CDP WebSocket URL (default: ws://localhost:9222)
---provider <name>    LLM provider: anthropic or openai (auto-detected if not set)
---model <model>      Model name (default: claude-sonnet-4-6)
---max-steps <n>      Max agent steps (default: 20)
---screenshots <dir>  Save step screenshots to directory
---launch             Auto-launch Chrome/Chromium before running
---no-headless        Launch Chrome/Chromium with a visible window
---force-launch       Shut down an existing debugging browser before launching
---user-data-dir <p>  Reuse a Chrome profile directory (default ~/.local/chrome-profile when visible)
---output <format>    Output format: text or json (default: text)
---debug              Log raw CDP messages
-```
-
-#### `repl` — interactive session
-
-```bash
-kuskus repl --launch
-```
-
-Special commands inside REPL:
-
-```
-!screenshot   Capture and save the current viewport
-!tabs         List open browser tabs
-!history      Show action history
-!clear        Reset agent memory
-!exit         Quit
-```
-
-#### `script` — batch tasks from JSON
-
-```bash
-kuskus script ./tasks.json --output json
-```
-
-`tasks.json` format:
-
-```json
-[
-  "go to github.com/lightpanda-io/browser and read the description",
-  "search google for nodejs best practices 2025 and list the top 3 links"
-]
-```
-
-#### `install` — manually install Chromium
-
-```bash
-kuskus install
-# or force re-download
-kuskus install --force
-```
-
-#### `mcp` — start MCP server
-
-```bash
-kuskus mcp
-```
-
-> Chromium is downloaded and launched automatically. No API key required.
+> The auto-launched browser uses a dedicated user-data directory (`~/.local/kuskus/profile`) so it won’t interfere with your main Chrome profile.
 
 ---
 
-## MCP Server
+## CLI Commands
 
-The MCP server exposes browser control tools to any AI host — Claude Desktop, Cursor, OpenCode, or any MCP-compatible client. The host model drives the reasoning; Kuskus only executes browser actions.
+The same executable also exposes a lightweight CLI so you can trigger tools directly from the terminal (handy for quick smoke tests once the extension is connected).
 
-### Claude Desktop
+```bash
+# List available tools
+npx @porcupine/kuskus list
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+# Call a tool once (payload via inline JSON)
+npx @porcupine/kuskus call browser.navigate --payload '{"url":"https://example.com"}'
 
-```json
-{
-  "mcpServers": {
-    "kuskus": {
-      "command": "npx",
-      "args": ["-y", "@porcupine/kuskus", "mcp"],
-      "env": {
-        "CDP_URL": "ws://localhost:9222"
-      }
-    }
-  }
-}
+# Call a tool using payload from file and save images to disk
+npx @porcupine/kuskus call browser.screenshot --output ./screenshot.png
+
+# Use the LLM agent to plan and execute multiple steps (requires OPENAI_API_KEY)
+npx @porcupine/kuskus run "Find the latest Mac Mini prices on Tokopedia"
 ```
 
-### OpenCode
+When you run a command that talks to the browser, the CLI launches (or reuses) the Chrome instance described above, loads the bundled extension, and waits for it to connect. If you disable the auto-launch behaviour (`KUSKUS_SKIP_LAUNCH=true`), make sure the popup in your existing browser displays “Connected” before invoking commands.
 
-Add to `~/.config/opencode/opencode.json`:
+> **Note:** the `run` command uses OpenAI's Chat Completions API by default. Set `OPENAI_API_KEY` (and optionally `KUSKUS_MODEL`) in your environment to enable it.
 
-```json
-{
-  "mcp": {
-    "kuskus": {
-      "type": "local",
-      "command": ["npx", "-y", "@porcupine/kuskus", "mcp"],
-      "enabled": true,
-      "environment": {
-        "CDP_URL": "ws://localhost:9222"
-      }
-    }
-  }
-}
-```
-
-### Cursor / other MCP clients
-
-```json
-{
-  "mcpServers": {
-    "kuskus": {
-      "command": "npx",
-      "args": ["-y", "@porcupine/kuskus", "mcp"]
-    }
-  }
-}
-```
-
-### Available MCP Tools
-
-#### Navigation
-| Tool | Description |
-|------|-------------|
-| `browser_navigate` | Navigate to a URL |
-| `browser_go_back` | Go back in history |
-| `browser_go_forward` | Go forward in history |
-| `browser_get_url` | Get current URL |
-
-#### Observation
-| Tool | Description |
-|------|-------------|
-| `browser_screenshot` | Capture viewport as PNG |
-| `browser_get_content` | Get page text content |
-| `browser_element_info` | Get element attributes and text |
-
-#### Interaction
-| Tool | Description |
-|------|-------------|
-| `browser_click` | Click element by CSS selector |
-| `browser_type` | Type text into an input |
-| `browser_key_press` | Press a key (Enter, Tab, Escape…) |
-| `browser_scroll` | Scroll up or down |
-| `browser_hover` | Hover over an element |
-| `browser_select` | Select a `<select>` option |
-| `browser_checkbox` | Check or uncheck a checkbox |
-
-#### JavaScript
-| Tool | Description |
-|------|-------------|
-| `browser_evaluate` | Execute JS and return result |
-| `browser_extract` | Extract structured data via JS |
-
-#### Tabs
-| Tool | Description |
-|------|-------------|
-| `browser_list_tabs` | List all open tabs |
-| `browser_new_tab` | Open a new tab |
-| `browser_switch_tab` | Switch to a tab by ID |
-| `browser_close_tab` | Close a tab |
-
-#### Utility
-| Tool | Description |
-|------|-------------|
-| `browser_wait` | Wait N milliseconds (max 10s) |
-
-### MCP Resources
-
-| URI | Description |
-|-----|-------------|
-| `browser://screenshot` | Current viewport as PNG |
-| `browser://page/content` | Current page text |
-| `browser://page/url` | Current URL |
-| `browser://tabs` | Open tabs as JSON |
+Once connected, browser actions issued by the host will execute against your currently selected Chrome tab. Auto-launched runs use a dedicated profile directory so your main browser profile stays untouched; if you attach manually, the CLI leaves your existing cookies, logins, and extensions intact.
 
 ---
 
-## Architecture
+## Automatic Chrome Provisioning
 
-```
-Entry Points
-  kuskus run / repl / script          kuskus mcp
-          │                                │
-          ▼                                ▼
-    Agent Core                       MCP Server
-  (plan → execute loop)          (expose tools directly)
-  Claude API + tool use           no LLM — host model drives
-          │                                │
-          └──────────────┬─────────────────┘
-                         ▼
-                  Executor (CDP tools)
-                         │
-                  SessionManager
-                  (single WebSocket,
-                   session multiplexing)
-                         │
-              Chromium Browser
-              ws://localhost:9222
-```
+- On Linux/macOS/Windows, the CLI scans for existing Chrome/Chromium binaries. If none are found it fetches the latest *Chrome for Testing* build, extracts it under `~/.local/kuskus/chrome/<version>/` (or `%LOCALAPPDATA%\kuskus\chrome\<version>%` on Windows), and places a convenience symlink at `~/.local/bin/kuskus-chrome` (Unix) or keeps the executable alongside the download on Windows.
+- Auto-launched sessions reuse a dedicated profile directory (`~/.local/kuskus/profile`) so caches, cookies, and extension state remain isolated from your primary browser profile.
+- Set `KUSKUS_CHROME_PATH` to point at a specific binary or `KUSKUS_SKIP_LAUNCH=true` if you want to manage the browser yourself.
 
-### How the agent loop works
+---
 
-```
-┌─────────────────────────────────────────────┐
-│  1. Observe   get_page_content + screenshot  │
-│  2. Plan      Claude picks next tool         │
-│  3. Execute   CDP command via Chromium       │
-│  4. Remember  append step to rolling history │
-│  5. Repeat    until finish or max steps      │
-└─────────────────────────────────────────────┘
-```
+### Common CLI Options
+
+All subcommands accept runtime overrides that mirror the environment variables:
+
+- `--agent-model <name>` – set the default agent model (env: `KUSKUS_MODEL`).
+- `--ws-port <port>` – change the extension WebSocket port (`KUSKUS_WS_PORT`).
+- `--timeout <ms>` – adjust tool response timeout (`KUSKUS_TOOL_TIMEOUT`).
+- `--debug`/`--no-debug` – toggle verbose logging (`KUSKUS_DEBUG`).
+- `--debug-port <port>` – pick a Chrome remote debugging port (`KUSKUS_CDP_PORT`).
+- `--chrome-path <path>` – point at an existing Chrome/Chromium binary (`KUSKUS_CHROME_PATH`).
+- `--skip-launch` – attach to a manually launched browser (`KUSKUS_SKIP_LAUNCH`).
+- `--extension-dir <path>` – load a different unpacked extension (`KUSKUS_EXTENSION_DIR`).
+- `--profile-dir <path>` – change the auto-launched profile directory (`KUSKUS_PROFILE_DIR`).
+- `--data-dir <path>` – relocate downloads/cache (`KUSKUS_DATA_DIR`).
+- `--bin-dir <path>` – override the helper symlink/executable directory (`KUSKUS_BIN_DIR`).
+
+These flags are applied before Chrome is detected or launched, letting you customise behaviour per invocation without editing `.env`.
+
+> Tip: run once with `--extension-dir /path/to/extension` to copy that bundle into `~/.local/kuskus/extension/`. Future sessions will use the copied version automatically, even if you omit the flag.
+
+---
+
+## Available Tools
+
+| Tool name | Description | Parameters |
+|-----------|-------------|------------|
+| `browser.navigate` | Navigate the active tab to a URL. | `{ url: string }` |
+| `browser.goBack` | Go back one step in history. | — |
+| `browser.goForward` | Go forward one step in history. | — |
+| `browser.wait` | Pause execution for N seconds (max 120). | `{ time: number }` |
+| `browser.pressKey` | Dispatch a keyboard key to the focused element. | `{ key: string }` |
+| `browser.snapshot` | Return URL, title, and a YAML-formatted ARIA snapshot. | — |
+| `browser.click` | Click an element by CSS selector. | `{ selector: string }` |
+| `browser.hover` | Hover an element by CSS selector. | `{ selector: string }` |
+| `browser.type` | Type text into an element (optionally replace). | `{ selector: string, text: string, replace?: boolean }` |
+| `browser.selectOption` | Select a value in a `<select>` element. | `{ selector: string, value: string }` |
+| `browser.drag` | Drag from one selector to another. | `{ sourceSelector: string, targetSelector: string }` |
+| `browser.screenshot` | Capture a PNG of the visible tab. | — |
+| `browser.getConsoleLogs` | Retrieve buffered console logs captured by the extension. | — |
+
+Most interaction tools return a fresh snapshot so downstream reasoning models can see page changes without issuing another command.
+
+---
+
+## Chrome Extension
+
+- **Popup (`popup.html`)** provides status, port selection, and connect/disconnect controls.
+- **Service worker (`service_worker.js`)** maintains the WebSocket connection, injects lightweight DOM helpers, and mirrors Kuskus’s JSON message format.
+- Actions run inside the user’s tab via `chrome.scripting.executeScript`, ensuring they inherit the real browser fingerprint.
+
+If you switch to another Chrome tab, click “Connect” again to update the active target.
 
 ---
 
 ## Configuration
 
-All options via environment variables (`.env` file supported):
+Use environment variables to tweak the runtime:
 
-```env
-# CLI only — not needed for MCP
-ANTHROPIC_API_KEY=sk-ant-...      # for Claude models
-OPENAI_API_KEY=sk-...             # for GPT / o-series models
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENAI_API_KEY` | — | Required for the `run` CLI command (LLM agent) |
+| `KUSKUS_MODEL` | `gpt-4o-mini` | Override the OpenAI model used by the agent |
+| `KUSKUS_WS_PORT` | `58338` | WebSocket port used by the extension and server |
+| `KUSKUS_TOOL_TIMEOUT` | `30000` | Timeout for extension responses |
+| `KUSKUS_DEBUG` | `false` | Enable verbose server logging |
+| `KUSKUS_CHROME_PATH` | — | Provide a custom Chrome/Chromium binary path (skips auto detection) |
+| `KUSKUS_SKIP_LAUNCH` | `false` | Set to `true` to attach to an already-running browser/extension |
+| `KUSKUS_CDP_PORT` | `9222` | Remote debugging port used when launching Chrome |
+| `KUSKUS_PROFILE_DIR` | `~/.local/kuskus/profile` | Custom user-data dir for the auto-launched browser |
+| `KUSKUS_DATA_DIR` | `~/.local/kuskus` | Base directory for downloaded binaries and state |
+| `KUSKUS_BIN_DIR` | `~/.local/bin` (Unix) / `%LOCALAPPDATA%\kuskus\bin` (Windows) | Directory that receives the helper symlink/executable |
+| `KUSKUS_EXTENSION_DIR` | `<repo>/extension` | Directory that will be loaded via `--load-extension` |
 
-# Provider: anthropic | openai — auto-detected from model name if not set
-# AGENT_PROVIDER=anthropic
-
-AGENT_MODEL=claude-sonnet-4-6    # or gpt-4o, o3-mini, etc.
-AGENT_MAX_STEPS=20
-AGENT_MAX_TOKENS=4096
-AGENT_INCLUDE_SCREENSHOT=true
-AGENT_SCREENSHOT_QUALITY=80
-
-# Browser (CLI + MCP)
-CDP_URL=ws://localhost:9222
-# CDP_BROWSER_PATH=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-CDP_BROWSER_PORT=9222
-
-# Logging
-LOG_LEVEL=info                     # debug | info | warn | error
-LOG_FORMAT=pretty                  # pretty | logfmt
-```
+The CLI reads `.env` automatically if present (via Node’s standard `process.env`). If you change the WebSocket port while auto-launch is enabled, also update the extension (via the popup) or run with `KUSKUS_SKIP_LAUNCH=true` and connect manually.
 
 ---
 
-## Browser Runtime
+## Integration Examples
 
-Kuskus looks for Chrome/Chromium automatically. It checks common install locations (`/Applications/Google Chrome.app`, `chromium`, etc.) and honours `CDP_BROWSER_PATH`, `CHROME_PATH`, and `GOOGLE_CHROME_BIN` if set.
+### Claude Desktop
 
-When no suitable binary is found (and auto-install is allowed) Kuskus downloads the latest **Chromium for Testing** build to `~/.local/chrome/<version>` and symlinks it to `~/.local/bin/chromium`.
+```json
+{
+  "mcpServers": {
+    "kuskus": {
+      "command": "mcp-server-kuskus"
+    }
+  }
+}
+```
 
-Supported platforms for auto-download:
+### Cursor
 
-| OS | Arch |
-|----|------|
-| Linux | x86_64, arm64 |
-| macOS | x86_64 (Intel), arm64 (Apple Silicon) |
+```json
+{
+  "mcpServers": {
+    "kuskus": {
+      "command": "npx",
+      "args": ["@porcupine/kuskus"]
+    }
+  }
+}
+```
 
-Use `CDP_BROWSER_PATH` to point at a custom binary if you prefer a specific channel (e.g. Chrome Canary) or an alternative CDP-compatible browser.
+Because the server uses stdio, no ports need to be exposed to the MCP host. Only the extension speaks over `ws://127.0.0.1:{port}`.
 
 ---
 
-## Examples
-
-```bash
-# With Claude (default)
-kuskus run "go to https://github.com/lightpanda-io/browser and summarize the README" --launch
-
-# With GPT-4o — provider auto-detected from model name
-kuskus run "go to news.ycombinator.com and list the top 5 posts" --model gpt-4o --launch
-
-# With o3-mini
-kuskus run "go to https://httpbin.org/json and extract all fields" --model o3-mini --launch
-
-# Force provider explicitly
-kuskus run "..." --provider openai --model gpt-4o-mini --launch
-
-# Interactive REPL
-kuskus repl --launch
-kuskus repl --model gpt-4o --launch
-
-# Extract data as JSON
-kuskus run "go to news.ycombinator.com, extract title and URL of each front page post" --launch --output json
-
-# Batch tasks
-kuskus script ./tasks.json --model gpt-4o --output json
-```
-
----
-
-## Development
-
-```bash
-git clone https://github.com/porcupine/kuskus
-cd kuskus
-npm install
-cp .env.example .env
-
-# Run tests
-npm test
-
-# Try the CLI
-node bin/cli.js install         # download Chromium for Testing
-node bin/cli.js run "..." --launch
-```
-
-### Project structure
+## Project Structure
 
 ```
 kuskus/
 ├── bin/
-│   └── cli.js              CLI entrypoint (run/repl/script/mcp/install)
+│   └── mcp.js               # CLI bootstrap (delegates to src/index.js)
 ├── src/
-│   ├── cdp/
-│   │   ├── client.js       WebSocket CDP client + session multiplexing
-│   │   ├── session.js      Target/tab manager
-│   │   └── domains/
-│   │       ├── page.js     Navigate, screenshot, reload
-│   │       ├── dom.js      querySelector, getBoxModel, focus
-│   │       ├── input.js    Click, hover, scroll, key press
-│   │       ├── runtime.js  Evaluate JS
-│   │       ├── network.js  Request monitoring/intercept
-│   │       └── target.js   Multi-tab management
-│   ├── agent/
-│   │   ├── index.js        KuskusAgent orchestrator
-│   │   ├── planner.js      LLM planning loop (provider-agnostic)
-│   │   ├── providers.js    Anthropic + OpenAI adapters, auto-detection
-│   │   ├── executor.js     Tool → CDP command mapping
-│   │   ├── tools.js        Tool definitions (JSON Schema)
-│   │   ├── memory.js       Rolling step history
-│   │   └── prompts.js      System prompt
-│   ├── mcp/
-│   │   ├── server.js       MCP server (stdio transport)
-│   │   └── handlers.js     Tool + resource handlers
-│   └── utils/
-│       ├── chromium.js     Chrome/Chromium detector + downloader
-│       ├── browser.js      Launch + CDP readiness check
-│       ├── dom-to-text.js  HTML → readable text for LLM
-│       ├── screenshot.js   Save screenshots to disk
-│       └── logger.js       Structured logger (pino)
-├── tests/
-└── examples/
+│   ├── config.js            # App + runtime configuration
+│   ├── context.js           # WebSocket request/response broker
+│   ├── server.js            # MCP server factory
+│   ├── ws.js                # WebSocket server utilities
+│   ├── tools/               # Tool schemas + handlers
+│   ├── utils/               # Logging, port helpers, snapshot builder
+│   └── resources/           # Resource helpers (placeholder for future)
+├── extension/
+│   ├── manifest.json
+│   ├── popup.html / popup.js
+│   └── service_worker.js
+├── SPEC.md                  # High-level specification & roadmap
+└── package.json
 ```
 
 ---
 
-## License
+## Roadmap
 
-MIT
+- Expand the toolset to include scrolling, JavaScript evaluation, and richer resources.
+- Stream artifacts (screenshots, DOM dumps) as MCP resources rather than inline tool results.
+- Investigate porting additional Kuskus monorepo utilities (e.g., messaging helpers) to tighten parity with upstream.
+
+Contributions and bug reports are welcome. If you plan to extend the extension or add new tools, update `SPEC.md` with the planned behavior so host integrations stay predictable.
