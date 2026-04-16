@@ -1,10 +1,10 @@
 {
     "name": "@porcupine/kuskus",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "description": "CDP-based browser automation tool with MCP server and CLI — powered by Puppeteer and OpenAI",
     "type": "module",
     "bin": {
-        "kuskus": "./bin/kuskus.js"
+        "kuskus": "bin/kuskus.js"
     },
     "scripts": {
         "start": "node bin/kuskus.js mcp",
