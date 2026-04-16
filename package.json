@@ -1,6 +1,6 @@
 {
     "name": "@porcupine/kuskus",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "description": "CDP-based browser automation tool with MCP server and CLI — powered by Puppeteer and OpenAI",
     "type": "module",
     "bin": {

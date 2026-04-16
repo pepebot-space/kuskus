@@ -120,13 +120,13 @@ export async function getPage() {
 
 /**
  * Close or disconnect the browser.
- * If connected to an external Chrome (via --cdp-port), disconnects without closing Chrome.
- * If we launched Chrome ourselves, closes it entirely.
+ * When KUSKUS_CDP_PORT is set, always disconnects (leaves Chrome running for the next call).
+ * Without CDP port, closes Chrome entirely after each call.
  */
 export async function closeBrowser() {
     if (_browser) {
-        if (_isConnected) {
-            logger.cdp('Disconnecting from external Chrome (leaving it running)');
+        if (_isConnected || process.env.KUSKUS_CDP_PORT) {
+            logger.cdp('Disconnecting from browser (leaving Chrome running)');
             await _browser.disconnect();
         } else {
             logger.cdp('Closing browser');

@@ -227,53 +227,18 @@ kuskus call reload '{}'   # refresh to get latest
 |------|---------|-------------|
 | `--headless <bool>` | `true` | `false` opens a visible Chrome window |
 | `--debug` | `false` | Verbose logs: `[CDP]`, `[TOOL]`, `[MCP]` categories |
-| `--cdp-port <port>` | `9222` | Connect to existing Chrome on this port (or launch new one if none found) |
+| `--cdp-port <port>` | — | Use a fixed CDP port for persistent sessions across calls |
 | `--chrome-path <path>` | auto | Path to Chrome/Chromium binary |
 
 ```bash
 # Watch navigation happen in a real browser window
-node bin/kuskus.js call --headless false navigate '{"url":"https://example.com"}'
+npx @porcupine/kuskus@latest call --headless false navigate '{"url":"https://example.com"}'
 
 # Debug CDP events step by step
-node bin/kuskus.js call --debug navigate '{"url":"https://example.com"}'
+npx @porcupine/kuskus@latest call --debug navigate '{"url":"https://example.com"}'
 
 # Use a specific Chrome install
-node bin/kuskus.js call --chrome-path /usr/bin/chromium navigate '{"url":"https://example.com"}'
-```
-
----
-
-## Persistent Browser Sessions (for multi-step agent browsing)
-
-By default each `kuskus call` opens and closes Chrome. To keep a browser alive across multiple calls — necessary for JS-heavy sites and multi-step flows — start Chrome with remote debugging first, then pass `--cdp-port` (or `KUSKUS_CDP_PORT`).
-
-When `KUSKUS_CDP_PORT` is set, kuskus **tries to connect to an existing Chrome** on that port first. If none is found, it launches a new one. When the CLI call finishes, it **disconnects without closing Chrome**, so the next call resumes the same session and page state.
-
-```bash
-# Step 1 — start a persistent Chrome (headless or visible)
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --remote-debugging-port=9222 \
-  --no-first-run \
-  --no-default-browser-check \
-  --headless=new \
-  "about:blank" &
-
-# Step 2 — navigate (connects to the running Chrome, page stays open after)
-KUSKUS_CDP_PORT=9222 KUSKUS_WAIT_UNTIL=networkidle2 node bin/kuskus.js call navigate '{"url":"https://trends.google.com/trending?geo=ID"}'
-
-# Step 3 — read content from the same page (Chrome is still alive)
-KUSKUS_CDP_PORT=9222 node bin/kuskus.js call readPage '{}'
-
-# Step 4 — extract data with JS
-KUSKUS_CDP_PORT=9222 node bin/kuskus.js call evaluate '{"expression":"document.title"}'
-
-# Step 5 — stop Chrome when done
-pkill -f "remote-debugging-port=9222"
-```
-
-On Linux/CI:
-```bash
-google-chrome --remote-debugging-port=9222 --headless=new --no-sandbox about:blank &
+npx @porcupine/kuskus@latest call --chrome-path /usr/bin/chromium navigate '{"url":"https://example.com"}'
 ```
 
 ---
@@ -283,7 +248,7 @@ google-chrome --remote-debugging-port=9222 --headless=new --no-sandbox about:bla
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `KUSKUS_HEADLESS` | `true` | Headless browser mode |
-| `KUSKUS_CDP_PORT` | — | Connect to Chrome on this port; falls back to launching new Chrome |
+| `KUSKUS_CDP_PORT` | — | Fix CDP port for persistent sessions; Chrome stays alive between calls |
 | `KUSKUS_WAIT_UNTIL` | `domcontentloaded` | Navigation wait strategy: `domcontentloaded` \| `load` \| `networkidle0` \| `networkidle2` |
 | `KUSKUS_DEBUG` | `false` | Enable debug logging |
 | `KUSKUS_NAV_TIMEOUT` | `30000` | Navigation timeout in ms |
@@ -292,19 +257,32 @@ google-chrome --remote-debugging-port=9222 --headless=new --no-sandbox about:bla
 | `KUSKUS_VIEWPORT_HEIGHT` | `720` | Browser viewport height |
 | `KUSKUS_CHROME_PATH` | — | Custom Chrome binary path |
 
-**When to use `KUSKUS_WAIT_UNTIL`:**
-- `domcontentloaded` (default) — fast, good for static pages and most sites
-- `networkidle2` — waits until ≤2 open network connections for 500ms; use for JS-heavy SPAs (Google Trends, dashboards, etc.)
-- `load` — waits for all resources including images; slower
-- `networkidle0` — strictest; waits until zero open connections; may timeout on pages with long-polling
+**Persistent sessions** — set `KUSKUS_CDP_PORT` to keep Chrome alive between calls. Kuskus launches Chrome on the first call and reuses it on subsequent calls instead of opening a new one each time:
 
 ```bash
-# JS-heavy SPA — use networkidle2
-KUSKUS_CDP_PORT=9222 KUSKUS_WAIT_UNTIL=networkidle2 node bin/kuskus.js call navigate '{"url":"https://trends.google.com/trending?geo=ID"}'
+# Without KUSKUS_CDP_PORT: Chrome opens and closes on every call (stateless)
+npx @porcupine/kuskus@latest call navigate '{"url":"https://example.com"}'
 
-# Show browser, longer timeout for slow sites
-KUSKUS_HEADLESS=false KUSKUS_NAV_TIMEOUT=60000 node bin/kuskus.js call navigate '{"url":"https://slow-site.com"}'
+# With KUSKUS_CDP_PORT: Chrome stays alive, session persists across calls
+KUSKUS_CDP_PORT=9222 npx @porcupine/kuskus@latest call navigate '{"url":"https://example.com"}'
+KUSKUS_CDP_PORT=9222 npx @porcupine/kuskus@latest call readPage '{}'
+KUSKUS_CDP_PORT=9222 npx @porcupine/kuskus@latest call evaluate '{"expression":"document.title"}'
 ```
+
+**`KUSKUS_WAIT_UNTIL`** — use `networkidle2` for JS-heavy SPAs that render content after the initial DOM:
+
+```bash
+# Static pages (default)
+npx @porcupine/kuskus@latest call navigate '{"url":"https://example.com"}'
+
+# JS-heavy SPA (Google Trends, dashboards, etc.)
+KUSKUS_WAIT_UNTIL=networkidle2 npx @porcupine/kuskus@latest call navigate '{"url":"https://trends.google.com/trending?geo=ID"}'
+```
+
+- `domcontentloaded` (default) — fast, good for most sites
+- `networkidle2` — waits until ≤2 open connections for 500ms; for SPAs
+- `load` — waits for all resources including images
+- `networkidle0` — strictest; avoid on pages with long-polling
 
 ---
 
