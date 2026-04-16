@@ -20,6 +20,9 @@ export const config = {
     navigationTimeout: parseInt(env('KUSKUS_NAV_TIMEOUT', '30000'), 10),
     toolTimeout: parseInt(env('KUSKUS_TOOL_TIMEOUT', '15000'), 10),
 
+    // Navigation wait strategy: domcontentloaded | load | networkidle0 | networkidle2
+    waitUntil: env('KUSKUS_WAIT_UNTIL', 'domcontentloaded'),
+
     // Debug
     debug: env('KUSKUS_DEBUG', 'false') === 'true',
 

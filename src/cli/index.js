@@ -15,6 +15,7 @@ import { tools, executeTool, getToolNames, getToolDefinitions } from '../cdp/too
 import { startMCPServer } from '../mcp/server.js';
 import { runAgent } from '../agent/planner.js';
 import { closeBrowser } from '../cdp/browser.js';
+import { runDoctor } from './doctor.js';
 
 const program = new Command();
 
@@ -34,6 +35,15 @@ program
         if (opts.model) process.env.KUSKUS_MODEL = opts.model;
         if (opts.cdpPort) process.env.KUSKUS_CDP_PORT = opts.cdpPort;
         if (opts.chromePath) process.env.KUSKUS_CHROME_PATH = opts.chromePath;
+    });
+
+// ─── doctor ──────────────────────────────────────────────────────────────────
+
+program
+    .command('doctor')
+    .description('Check environment, Chrome, and dependencies')
+    .action(async () => {
+        await runDoctor();
     });
 
 // ─── mcp ─────────────────────────────────────────────────────────────────────

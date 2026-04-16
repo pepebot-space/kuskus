@@ -10,10 +10,12 @@ import { resolveChromePath } from './chrome-resolver.js';
 
 let _browser = null;
 let _page = null;
+let _isConnected = false; // true = connected to external Chrome (we don't own it)
 
 /**
  * Launch (or reuse) a Puppeteer browser instance.
- * Resolves Chrome path: env var → system Chrome → ~/.local/chrome → auto-download.
+ * When KUSKUS_CDP_PORT is set, tries to connect to an existing Chrome on that port first.
+ * Falls back to launching a new Chrome if no existing instance is found.
  */
 export async function launchBrowser() {
     if (_browser && _browser.connected) {
@@ -21,7 +23,28 @@ export async function launchBrowser() {
         return _browser;
     }
 
-    // Resolve Chrome executable
+    // Try to connect to an existing Chrome on the CDP port first
+    if (process.env.KUSKUS_CDP_PORT) {
+        try {
+            _browser = await puppeteer.connect({
+                browserURL: `http://localhost:${config.cdpPort}`,
+                defaultViewport: null,
+            });
+            _isConnected = true;
+            logger.cdp(`Connected to existing Chrome on port ${config.cdpPort}`);
+            _browser.on('disconnected', () => {
+                logger.cdp('Browser disconnected');
+                _browser = null;
+                _page = null;
+                _isConnected = false;
+            });
+            return _browser;
+        } catch (_) {
+            logger.cdp(`No Chrome found on port ${config.cdpPort}, launching new one`);
+        }
+    }
+
+    // Resolve Chrome executable and launch
     const chromePath = await resolveChromePath();
     logger.cdp('Using Chrome:', chromePath);
 
@@ -42,12 +65,14 @@ export async function launchBrowser() {
     };
 
     logger.cdp('Launching browser', { headless: config.headless, port: config.cdpPort });
+    _isConnected = false;
     _browser = await puppeteer.launch(launchOpts);
 
     _browser.on('disconnected', () => {
         logger.cdp('Browser disconnected');
         _browser = null;
         _page = null;
+        _isConnected = false;
     });
 
     return _browser;
@@ -94,14 +119,22 @@ export async function getPage() {
 }
 
 /**
- * Close the browser.
+ * Close or disconnect the browser.
+ * If connected to an external Chrome (via --cdp-port), disconnects without closing Chrome.
+ * If we launched Chrome ourselves, closes it entirely.
  */
 export async function closeBrowser() {
     if (_browser) {
-        logger.cdp('Closing browser');
-        await _browser.close();
+        if (_isConnected) {
+            logger.cdp('Disconnecting from external Chrome (leaving it running)');
+            await _browser.disconnect();
+        } else {
+            logger.cdp('Closing browser');
+            await _browser.close();
+        }
         _browser = null;
         _page = null;
+        _isConnected = false;
     }
 }
 

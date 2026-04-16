@@ -14,6 +14,7 @@ import { z } from 'zod';
 import { gunzipSync } from 'node:zlib';
 import { getPage, getCDPSession, closeBrowser } from './browser.js';
 import { logger } from '../utils/logger.js';
+import { config } from '../config.js';
 
 // ─── Tool Registry ───────────────────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ defineTool('navigate', 'Navigate to a URL', z.object({
         logger.tool('navigate URL parse error →', err.message);
     }
 
-    const response = await page.goto(targetUrl, { waitUntil: 'domcontentloaded' });
+    const response = await page.goto(targetUrl, { waitUntil: config.waitUntil });
     const title = await page.title();
     let textPreview = '';
     let htmlPreview = '';
@@ -309,21 +310,21 @@ defineTool('navigate', 'Navigate to a URL', z.object({
 defineTool('goBack', 'Go back in browser history', z.object({}), async () => {
     logger.tool('goBack');
     const page = await getPage();
-    await page.goBack({ waitUntil: 'domcontentloaded' });
+    await page.goBack({ waitUntil: config.waitUntil });
     return { url: page.url(), title: await page.title() };
 });
 
 defineTool('goForward', 'Go forward in browser history', z.object({}), async () => {
     logger.tool('goForward');
     const page = await getPage();
-    await page.goForward({ waitUntil: 'domcontentloaded' });
+    await page.goForward({ waitUntil: config.waitUntil });
     return { url: page.url(), title: await page.title() };
 });
 
 defineTool('reload', 'Reload the current page', z.object({}), async () => {
     logger.tool('reload');
     const page = await getPage();
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: config.waitUntil });
     return { url: page.url(), title: await page.title() };
 });
 
